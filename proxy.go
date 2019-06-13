@@ -65,8 +65,8 @@ func (proxy *ReverseProxy) serveRequest(w ResponseWriter, req *Request) {
 	}
 
 	req.Addr = upstream
-	res, err := proxy.roundTrip(req)
 
+	res, err := proxy.roundTrip(req)
 	switch err.(type) {
 	case nil:
 	case *resp.Error:

@@ -2,16 +2,20 @@ package redis_test
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	redis "github.com/dolab/redis-go"
+	fuzz "github.com/google/gofuzz"
 	"github.com/segmentio/objconv/resp"
+
+	redis "github.com/dolab/redis-go"
 )
 
 func TestServer(t *testing.T) {
@@ -95,7 +99,7 @@ func testServerCancelGracefulShutdown(t *testing.T, ctx context.Context) {
 	cancel()
 
 	if err := srv.Shutdown(ctx); err != context.Canceled {
-		t.Error(err)
+		t.Error("Shutdown", err)
 	}
 }
 
@@ -111,7 +115,14 @@ func testServerServeError(t *testing.T, ctx context.Context) {
 }
 
 func testServerSetAndGracefulShutdown(t *testing.T, ctx context.Context) {
-	key := generateKey()
+	gofuzz := fuzz.New()
+
+	var (
+		key string
+		val string
+	)
+	gofuzz.Fuzz(&key)
+	gofuzz.Fuzz(&val)
 
 	srv, url := newServer(redis.HandlerFunc(func(res redis.ResponseWriter, req *redis.Request) {
 		if req.Cmds[0].Cmd != "SET" {
@@ -127,7 +138,7 @@ func testServerSetAndGracefulShutdown(t *testing.T, ctx context.Context) {
 			t.Error("invalid key received by the server:", k)
 		}
 
-		if v != "0123456789" {
+		if v != val {
 			t.Error("invalid value received by the server:", v)
 		}
 
@@ -143,12 +154,12 @@ func testServerSetAndGracefulShutdown(t *testing.T, ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	if err := cli.Exec(ctx, "SET", key, "0123456789"); err != nil {
-		t.Error(err)
+	if err := cli.Exec(ctx, "SET", key, val); err != nil {
+		t.Error("SET", err)
 	}
 
 	if err := srv.Shutdown(ctx); err != nil {
-		t.Error(err)
+		t.Error("Shutdown", err)
 	}
 }
 
@@ -214,7 +225,7 @@ func testServerSingleLrangeAndGracefulShutdown(t *testing.T, ctx context.Context
 	}
 
 	if err := srv.Shutdown(ctx); err != nil {
-		t.Error(err)
+		t.Error("Shutdown", err)
 	}
 }
 
@@ -274,7 +285,7 @@ func testServerManyLrangeAndGracefulShutdown(t *testing.T, ctx context.Context) 
 	wg.Wait()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		t.Error(err)
+		t.Error("Shutdown", err)
 	}
 }
 
@@ -341,11 +352,66 @@ func testServerWriteErrorToResponseWriter(t *testing.T, ctx context.Context) {
 	}
 }
 
-func newServer(handler redis.Handler) (srv *redis.Server, url string) {
-	return newServerTimeout(handler, 100*time.Millisecond)
+func newServer(handler redis.Handler, servers ...redis.ServerList) (srv *redis.Server, url string) {
+	return newServerTimeout(handler, 100*time.Millisecond, servers...)
 }
 
-func newServerTimeout(handler redis.Handler, timeout time.Duration) (srv *redis.Server, url string) {
+func newServerTimeout(handler redis.Handler, timeout time.Duration, servers ...redis.ServerList) (srv *redis.Server, url string) {
+	if len(servers) > 0 {
+		for _, endpoint := range servers[0] {
+			go func(addr string) {
+				log.Println("Starting server ", addr)
+
+				store := sync.Map{}
+
+				log.Fatal(redis.ListenAndServe(addr, redis.HandlerFunc(func(w redis.ResponseWriter, r *redis.Request) {
+					for _, cmd := range r.Cmds {
+						switch cmd.Cmd {
+						case "SET":
+							var (
+								dst string
+
+								args []string
+							)
+							for cmd.Args.Next(&dst) {
+								args = append(args, dst)
+							}
+
+							if len(args) > 0 {
+								if len(args) > 1 {
+									store.Store(args[0], args[1:])
+								} else {
+									store.Store(args[0], nil)
+								}
+							}
+
+							w.Write("")
+						case "GET":
+							w.WriteStream(cmd.Args.Len())
+
+							var (
+								dst string
+							)
+							for cmd.Args.Next(&dst) {
+								v, ok := store.Load(dst)
+								if !ok {
+									w.Write("")
+								} else {
+									vals, ok := v.([]string)
+									if ok {
+										w.Write(strings.Join(vals, " "))
+									} else {
+										w.Write(fmt.Sprintf("%v", v))
+									}
+								}
+							}
+						}
+					}
+				})))
+			}(endpoint.Addr)
+		}
+	}
+
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		panic(err)
@@ -356,12 +422,18 @@ func newServerTimeout(handler redis.Handler, timeout time.Duration) (srv *redis.
 		ReadTimeout:  timeout,
 		WriteTimeout: timeout,
 		IdleTimeout:  timeout,
-		ErrorLog:     log.New(os.Stderr, "", 0),
+		ErrorLog:     log.New(os.Stderr, "[Godis]", 0),
 	}
 
-	go srv.Serve(l)
+	go func() {
+		err := srv.Serve(l)
+		if err != redis.ErrServerClosed {
+			log.Fatalf("[Godis] %v", err)
+		}
+	}()
 
 	addr := l.Addr()
+
 	url = addr.Network() + "://" + addr.String()
 	return
 }

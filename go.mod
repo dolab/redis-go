@@ -3,6 +3,7 @@ module github.com/dolab/redis-go
 go 1.12
 
 require (
+	github.com/google/gofuzz v1.0.0
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/segmentio/conf v1.1.0
 	github.com/segmentio/consul-go v1.3.0

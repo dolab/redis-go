@@ -11,11 +11,14 @@ defaults: &defaults
 default_steps: &default_steps
   steps:
     - checkout
+    - run:
+        name: Wait for Redis
+        command: dockerize -wait tcp://localhost:6379 -timeout 1m
 
     # specify any bash command here prefixed with `run: `
-    - run: go mod tidy -v
-    - run: go test -v
-    - run: go test -v -race
+    - run: GO111MODULE=on go mod tidy -v
+    - run: GO111MODULE=on go test -v
+    - run: GO111MODULE=on go test -v -race
 jobs:
   go1.6:
     <<: *defaults
@@ -55,6 +58,8 @@ jobs:
     docker:
       # specify the version
       - image: circleci/golang:1.12
+      - image: redis
+
 
       # Specify service dependencies here if necessary
       # CircleCI maintains a library of pre-built images
@@ -66,6 +71,7 @@ jobs:
     docker:
       # specify the version
       - image: circleci/golang:latest
+      - image: redis
 
       # Specify service dependencies here if necessary
       # CircleCI maintains a library of pre-built images

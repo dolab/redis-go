@@ -1,6 +1,8 @@
 package redis
 
-import "context"
+import (
+	"context"
+)
 
 // The ServerRegistry interface is an abstraction used to expose a (potentially
 // changing) list of backend redis servers.
