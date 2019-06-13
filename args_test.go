@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	redis "github.com/segmentio/redis-go"
+	redis "github.com/dolab/redis-go"
 )
 
 func TestList(t *testing.T) {

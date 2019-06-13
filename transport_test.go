@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	redis "github.com/segmentio/redis-go"
+	redis "github.com/dolab/redis-go"
 )
 
 func TestTransport(t *testing.T) {

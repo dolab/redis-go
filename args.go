@@ -241,6 +241,12 @@ func newArgsReader(p *resp.Parser, done chan<- error) *argsList {
 
 func (args *argsList) Close() error {
 	args.once.Do(func() {
+		defer func() {
+			if perr := recover(); perr != nil {
+				args.err = fmt.Errorf("%v", perr)
+			}
+		}()
+
 		for args.dec.Decode(nil) == nil {
 			// discard all remaining values
 		}
@@ -266,6 +272,12 @@ func (args *argsList) Len() int {
 }
 
 func (args *argsList) Next(val interface{}) bool {
+	defer func() {
+		if perr := recover(); perr != nil {
+			args.err = fmt.Errorf("%v", perr)
+		}
+	}()
+
 	if args.err != nil {
 		return false
 	}

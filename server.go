@@ -108,7 +108,7 @@ type Server struct {
 	// ErrorLog specifies an optional logger for errors accepting connections
 	// and unexpected behavior from handlers. If nil, logging goes to os.Stderr
 	// via the log package's standard logger.
-	ErrorLog *log.Logger
+	ErrorLog Logger
 
 	mutex       sync.Mutex
 	listeners   map[net.Listener]struct{}

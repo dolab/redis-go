@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	redis "github.com/dolab/redis-go"
 	"github.com/segmentio/objconv/resp"
-	redis "github.com/segmentio/redis-go"
 )
 
 func TestServer(t *testing.T) {

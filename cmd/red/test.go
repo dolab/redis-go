@@ -2,17 +2,18 @@ package main
 
 import (
 	"fmt"
-	"github.com/segmentio/conf"
-	"github.com/segmentio/events"
-	eventslog "github.com/segmentio/events/log"
-	redis "github.com/segmentio/redis-go"
-	"github.com/segmentio/redis-go/redistest"
-	"github.com/segmentio/stats"
-	"github.com/segmentio/stats/datadog"
-	"github.com/segmentio/stats/redisstats"
 	"math/rand"
 	"os"
 	"time"
+
+	redis "github.com/dolab/redis-go"
+	"github.com/dolab/redis-go/redistest"
+	"github.com/segmentio/conf"
+	"github.com/segmentio/events"
+	eventslog "github.com/segmentio/events/log"
+	"github.com/segmentio/stats"
+	"github.com/segmentio/stats/datadog"
+	"github.com/segmentio/stats/redisstats"
 )
 
 type testConfig struct {

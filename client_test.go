@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	redis "github.com/segmentio/redis-go"
-	"github.com/segmentio/redis-go/redistest"
+	redis "github.com/dolab/redis-go"
+	"github.com/dolab/redis-go/redistest"
 )
 
 func TestClient(t *testing.T) {
