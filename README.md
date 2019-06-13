@@ -1,4 +1,4 @@
-# redis-go [![CircleCI](https://circleci.com/gh/segmentio/redis-go.svg?style=shield)](https://circleci.com/gh/segmentio/redis-go) [![Go Report Card](https://goreportcard.com/badge/github.com/segmentio/redis-go)](https://goreportcard.com/report/github.com/segmentio/redis-go) [![GoDoc](https://godoc.org/github.com/segmentio/redis-go?status.svg)](https://godoc.org/github.com/segmentio/redis-go)
+# redis-go [![CircleCI](https://circleci.com/gh/dolab/redis-go.svg?style=shield)](https://circleci.com/gh/dolab/redis-go) [![Go Report Card](https://goreportcard.com/badge/github.com/dolab/redis-go)](https://goreportcard.com/report/github.com/dolab/redis-go) [![GoDoc](https://godoc.org/github.com/dolab/redis-go?status.svg)](https://godoc.org/github.com/dolab/redis-go)
 
 Go package providing tools for building redis clients, servers and middleware.
 
@@ -27,7 +27,7 @@ import (
     "fmt"
     "time"
 
-    "github.com/segmentio/redis-go"
+    "github.com/dolab/redis-go"
 )
 
 func main() {
@@ -61,7 +61,7 @@ func main() {
 package main
 
 import (
-    "github.com/segmentio/redis-go"
+    "github.com/dolab/redis-go"
 )
 
 func main() {

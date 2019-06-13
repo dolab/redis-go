@@ -16,8 +16,6 @@ github.com/segmentio/go-snakecase v1.1.0 h1:ZJO4SNKKV0MjGOv0LHnixxN5FYv1JKBnVXEu
 github.com/segmentio/go-snakecase v1.1.0/go.mod h1:jk1miR5MS7Na32PZUykG89Arm+1BUSYhuGR6b7+hJto=
 github.com/segmentio/objconv v1.0.1 h1:QjfLzwriJj40JibCV3MGSEiAoXixbp4ybhwfTB8RXOM=
 github.com/segmentio/objconv v1.0.1/go.mod h1:auayaH5k3137Cl4SoXTgrzQcuQDmvuVtZgS0fb1Ahys=
-github.com/segmentio/redis-go v0.3.0 h1:dZeGrfO9ihAN52XX8mECZdj5485rwUsgAjgR4KAQYTc=
-github.com/segmentio/redis-go v0.3.0/go.mod h1:KLCrD1nl/ph+k8e/nHrzd54BV9EBhxGdyu9ZYSVEEdE=
 github.com/segmentio/stats v4.1.0+incompatible h1:Sz7ypAORgiXoR8x8VNIOKYoVpJUIeHGt/2UDMjjRFuo=
 github.com/segmentio/stats v4.1.0+incompatible/go.mod h1:ZkGKMkt6GVRIsV5Biy4HotVqonMWEsr+uMtOD2NBDeU=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

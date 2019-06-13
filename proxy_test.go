@@ -1,14 +1,15 @@
 package redis_test
 
 import (
-	redis "github.com/segmentio/redis-go"
-	"github.com/segmentio/redis-go/redistest"
-	"github.com/stretchr/testify/assert"
 	"log"
 	"net/url"
 	"os"
 	"testing"
 	"time"
+
+	redis "github.com/dolab/redis-go"
+	"github.com/dolab/redis-go/redistest"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReverseProxy(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	redis "github.com/segmentio/redis-go"
+	redis "github.com/dolab/redis-go"
 )
 
 // MakeServerRegistry is the type of factory functions that the

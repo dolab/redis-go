@@ -25,7 +25,7 @@ type ReverseProxy struct {
 	// ErrorLog specifies an optional logger for errors accepting connections
 	// and unexpected behavior from handlers. If nil, logging goes to os.Stderr
 	// via the log package's standard logger.
-	ErrorLog *log.Logger
+	ErrorLog Logger
 }
 
 // ServeRedis satisfies the Handler interface.
@@ -182,11 +182,12 @@ func (proxy *ReverseProxy) log(err error) {
 		// bring any value to know that a client disconnected.
 		return
 	}
-	print := log.Print
-	if logger := proxy.ErrorLog; logger != nil {
-		print = logger.Print
+
+	if proxy.ErrorLog != nil {
+		proxy.ErrorLog.Print(err)
+	} else {
+		log.Print(err)
 	}
-	print(err)
 }
 
 func (proxy *ReverseProxy) transport() RoundTripper {
