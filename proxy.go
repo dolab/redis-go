@@ -41,24 +41,22 @@ func (proxy *ReverseProxy) serveRequest(w ResponseWriter, req *Request) {
 		keys = cmds[i].getKeys(keys)
 	}
 
-	servers, err := proxy.lookupServers(req.Context)
+	// TODO: looking up servers and rebuilding the hash ring for every request
+	// is not efficient, we should cache and reuse the state.
+	ring, err := proxy.lookupServers(req.Context)
 	if err != nil {
 		w.Write(errorf("ERR No upstream server were found to route the request to."))
 		proxy.log(err)
 		return
 	}
 
-	// TODO: looking up servers and rebuilding the hash ring for every request
-	// is not efficient, we should cache and reuse the state.
-	hashring := makeHashRing(servers...)
 	upstream := ""
-
 	for _, key := range keys {
-		addr := hashring.lookup(key)
+		endpoint := ring.LookupServer(key)
 
 		if len(upstream) == 0 {
-			upstream = addr
-		} else if upstream != addr {
+			upstream = endpoint.Addr
+		} else if upstream != endpoint.Addr {
 			w.Write(errorf("EXECABORT The transaction contains keys that hash to different upstream servers."))
 			return
 		}
@@ -153,16 +151,18 @@ func (proxy *ReverseProxy) servePubSub(conn net.Conn, rw *bufio.ReadWriter, comm
 	// - refresh the list of servers periodically so we can rebalance when new servers are added
 }
 
-func (proxy *ReverseProxy) lookupServers(ctx context.Context) ([]ServerEndpoint, error) {
+func (proxy *ReverseProxy) lookupServers(ctx context.Context) (ring ServerRing, err error) {
 	r := proxy.Registry
 	if r == nil {
-		return nil, errors.New("a redis proxy needs a non-nil registry to lookup the list of avaiable servers")
+		err = errors.New("a redis proxy needs a non-nil registry to LookupServer the list of available servers")
+		return
 	}
+
 	return r.LookupServers(ctx)
 }
 
 func (proxy *ReverseProxy) blacklistServer(upstream string) {
-	if b, ok := proxy.Registry.(ServerBlacklist); !ok {
+	if b, ok := proxy.Registry.(ServerBlacklist); ok {
 		b.BlacklistServer(ServerEndpoint{Addr: upstream})
 	}
 }

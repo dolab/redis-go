@@ -2,24 +2,25 @@ package redistest
 
 import (
 	"context"
-	"reflect"
 	"testing"
 	"time"
 
-	redis "github.com/dolab/redis-go"
+	"github.com/golib/assert"
+
+	"github.com/dolab/redis-go"
 )
 
 // MakeServerRegistry is the type of factory functions that the
 // TestServerRegistry test suite uses to create Clients to run the
 // tests against.
-type MakeServerRegistry func() (redis.ServerRegistry, []redis.ServerEndpoint, func(), error)
+type MakeServerRegistry func() (redis.ServerRegistry, string, redis.ServerEndpoint, func(), error)
 
 // TestServerRegistry is a test suite which verifies the behavior of
 // ServerRegistry implementations.
 func TestServerRegistry(t *testing.T, makeServerRegistry MakeServerRegistry) {
 	tests := []struct {
 		scenario string
-		function func(*testing.T, context.Context, redis.ServerRegistry, []redis.ServerEndpoint)
+		function func(*testing.T, context.Context, redis.ServerRegistry, string, redis.ServerEndpoint)
 	}{
 		{
 			scenario: "calling LookupServers with a canceled context returns an error",
@@ -38,36 +39,32 @@ func TestServerRegistry(t *testing.T, makeServerRegistry MakeServerRegistry) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			registry, endpoints, close, err := makeServerRegistry()
+			registry, key, endpoint, callback, err := makeServerRegistry()
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer close()
-			testFunc(t, ctx, registry, endpoints)
+			defer callback()
+
+			testFunc(t, ctx, registry, key, endpoint)
 		})
 	}
 }
 
-func testServerRegistryCancel(t *testing.T, ctx context.Context, registry redis.ServerRegistry, endpoints []redis.ServerEndpoint) {
+func testServerRegistryCancel(t *testing.T, ctx context.Context, registry redis.ServerRegistry, key string, endpoints redis.ServerEndpoint) {
+	it := assert.New(t)
+
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
 
-	if _, err := registry.LookupServers(ctx); err == nil {
-		t.Error("expected a non-nil error but got", err)
-	}
+	it.Nil(registry.LookupServers(ctx))
 }
 
-func testServerRegistryLookupServers(t *testing.T, ctx context.Context, registry redis.ServerRegistry, endpoints []redis.ServerEndpoint) {
-	servers, err := registry.LookupServers(ctx)
+func testServerRegistryLookupServers(t *testing.T, ctx context.Context, registry redis.ServerRegistry, key string, endpoint redis.ServerEndpoint) {
+	it := assert.New(t)
 
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	if !reflect.DeepEqual(servers, endpoints) {
-		t.Error("server endpoints don't match:")
-		t.Logf("expected: %#v", endpoints)
-		t.Logf("found:    %#v", servers)
+	ring, err := registry.LookupServers(ctx)
+	if it.Nil(err) {
+		it.Implements((*redis.ServerRing)(nil), ring)
+		it.Equal(endpoint, ring.LookupServer(key))
 	}
 }
