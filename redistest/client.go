@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -168,36 +169,60 @@ func (err multiError) Error() string {
 	}
 }
 
+func (err multiError) String() string {
+	if len(err) == 0 {
+		return "No error"
+	}
+
+	errs := make([]string, len(err))
+	for i, e := range err {
+		errs[i] = e.Error()
+	}
+
+	return strings.Join(errs, "; ")
+}
+
 // WriteTestPattern writes a test pattern to a Redis client. The objective is to read the test pattern back
 // at a later stage using ReadTestPattern.
 func WriteTestPattern(client *redis.Client, n int, keyTempl string, sleep time.Duration, timeout time.Duration) (numSuccess int, numFailure int, err error) {
 	writeErrs := make(chan error, n)
-	waiter := &sync.WaitGroup{}
+
+	var waiter sync.WaitGroup
 	for i := 0; i < n; i++ {
+		waiter.Add(1)
+
 		key := fmt.Sprintf(keyTempl, i)
 		val := "1"
-		waiter.Add(1)
+
 		go func(key, val string) {
 			defer waiter.Done()
+
 			time.Sleep(time.Duration(rand.Intn(int(sleep.Seconds()))) * time.Second)
+
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
+
 			if err := client.Exec(ctx, "SET", key, val); err != nil {
 				writeErrs <- err
 			}
 		}(key, val)
 	}
 	waiter.Wait()
+
 	close(writeErrs)
+
 	numFailure = len(writeErrs)
 	numSuccess = n - numFailure
+
 	if len(writeErrs) > 0 {
 		var merr multiError
 		for writeErr := range writeErrs {
 			merr = append(merr, writeErr)
 		}
+
 		return numSuccess, numFailure, merr
 	}
+
 	return numSuccess, numFailure, nil
 }
 
