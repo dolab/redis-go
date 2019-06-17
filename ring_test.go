@@ -7,25 +7,25 @@ import (
 )
 
 func TestHashRing(t *testing.T) {
-	ring2 := makeHashRing(
+	ring2 := NewHashRing(
 		ServerEndpoint{Addr: "127.0.0.1:1000"},
 		ServerEndpoint{Addr: "127.0.0.1:1001"},
 	)
 
-	ring3 := makeHashRing(
+	ring3 := NewHashRing(
 		ServerEndpoint{Addr: "127.0.0.1:1000"},
 		ServerEndpoint{Addr: "127.0.0.1:1001"},
 		ServerEndpoint{Addr: "127.0.0.1:1002"},
 	)
 
-	ring4 := makeHashRing(
+	ring4 := NewHashRing(
 		ServerEndpoint{Addr: "127.0.0.1:1000"},
 		ServerEndpoint{Addr: "127.0.0.1:1001"},
 		ServerEndpoint{Addr: "127.0.0.1:1002"},
 		ServerEndpoint{Addr: "127.0.0.1:1003"},
 	)
 
-	ring5 := makeHashRing(
+	ring5 := NewHashRing(
 		ServerEndpoint{Addr: "127.0.0.1:1000"},
 		ServerEndpoint{Addr: "127.0.0.1:1001"},
 		ServerEndpoint{Addr: "127.0.0.1:1002"},
@@ -38,12 +38,19 @@ func TestHashRing(t *testing.T) {
 		keys[i] = strconv.Itoa(rand.Int())
 	}
 
-	for _, dist := range []struct {
-		ringA hashRing
-		ringB hashRing
-	}{{ring2, ring3}, {ring3, ring4}, {ring4, ring5}, {ring3, ring5}} {
-		countA := len(dist.ringA) / hashRingReplication
-		countB := len(dist.ringB) / hashRingReplication
+	testCases := []struct {
+		ringA ServerRing
+		ringB ServerRing
+	}{
+		{ring2, ring3},
+		{ring3, ring4},
+		{ring4, ring5},
+		{ring3, ring5},
+	}
+
+	for _, dist := range testCases {
+		countA := len(dist.ringA.(hashRing)) / maxRingReplication
+		countB := len(dist.ringB.(hashRing)) / maxRingReplication
 		distA := distribute(dist.ringA, keys...)
 		distB := distribute(dist.ringB, keys...)
 		diff := difference(distA, distB)
@@ -59,11 +66,11 @@ func TestHashRing(t *testing.T) {
 	}
 }
 
-func distribute(ring hashRing, keys ...string) map[string]string {
+func distribute(ring ServerRing, keys ...string) map[string]string {
 	dist := make(map[string]string)
 
 	for _, k := range keys {
-		dist[k] = ring.lookup(k)
+		dist[k] = ring.LookupServer(k).Addr
 	}
 
 	return dist
@@ -88,7 +95,7 @@ func difference(dist1, dist2 map[string]string) map[string]struct{} {
 }
 
 func BenchmarkHashRing(b *testing.B) {
-	ring := makeHashRing(
+	ring := NewHashRing(
 		ServerEndpoint{Addr: "127.0.0.1:1000"},
 		ServerEndpoint{Addr: "127.0.0.1:1001"},
 		ServerEndpoint{Addr: "127.0.0.1:1002"},
@@ -101,7 +108,11 @@ func BenchmarkHashRing(b *testing.B) {
 		ServerEndpoint{Addr: "127.0.0.1:1009"},
 	)
 
-	for i := 0; i != b.N; i++ {
-		ring.lookup("DAB45194-42CC-4106-AB9F-2447FA4D35C2")
-	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			ring.LookupServer("DAB45194-42CC-4106-AB9F-2447FA4D35C2")
+		}
+	})
 }
