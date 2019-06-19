@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"runtime"
 	"strings"
@@ -153,11 +154,17 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 	conn := t.pool.getConn(req.Addr)
 	if conn == nil {
 		network, address := splitNetworkAddress(req.Addr)
+
 		c, err := t.dialContext(ctx, network, address)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
-				err = &net.OpError{Op: "dial", Net: "redis", Err: ctxErr}
+				err = &net.OpError{
+					Op:  "dial",
+					Net: fmt.Sprintf("redis(%s, %s)", network, address),
+					Err: ctxErr,
+				}
 			}
+
 			return nil, err
 		}
 		conn = NewClientConn(c)
@@ -298,9 +305,9 @@ var DefaultTransport RoundTripper = &Transport{
 // DefaultDialer is the default dialer used by Transports when no DialContext
 // is set.
 var DefaultDialer = &net.Dialer{
-	Timeout:   10 * time.Second,
-	KeepAlive: 30 * time.Second,
-	DualStack: true,
+	Timeout:       10 * time.Second,
+	KeepAlive:     30 * time.Second,
+	FallbackDelay: 100 * time.Millisecond,
 }
 
 type connPoolPutter struct {
