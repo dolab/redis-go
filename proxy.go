@@ -45,8 +45,9 @@ func (proxy *ReverseProxy) serveRequest(w ResponseWriter, req *Request) {
 	// is not efficient, we should cache and reuse the state.
 	ring, err := proxy.lookupServers(req.Context)
 	if err != nil {
-		w.Write(errorf("ERR No upstream server were found to route the request to."))
 		proxy.log(err)
+
+		w.Write(errorf("ERR No upstream server was found for the request."))
 		return
 	}
 
@@ -71,9 +72,11 @@ func (proxy *ReverseProxy) serveRequest(w ResponseWriter, req *Request) {
 		w.Write(err)
 		return
 	default:
-		w.Write(errorf("ERR Connecting to the upstream server failed."))
-		proxy.blacklistServer(upstream)
 		proxy.log(err)
+
+		proxy.blacklistServer(upstream)
+
+		w.Write(errorf("ERR Connecting to the upstream (%s) server failed.", upstream))
 		return
 	}
 
