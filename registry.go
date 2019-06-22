@@ -67,7 +67,8 @@ func (list ServerList) LookupServers(ctx context.Context) (ServerRing, error) {
 			// TODO: rebuilding the hash ring for every request is not efficient, we should cache and reuse the state.
 			ring := NewHashRing(endpoints...)
 
-			return ring.LookupServer(key)
+			endpoint := ring.LookupServer(key)
+			return endpoint
 		}), nil
 	}
 }

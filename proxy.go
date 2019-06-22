@@ -124,9 +124,11 @@ func (proxy *ReverseProxy) writeTxArgs(w ResponseWriter, tx TxArgs) (err error) 
 }
 
 func (proxy *ReverseProxy) writeArgs(w ResponseWriter, a Args) (err error) {
-	var v interface{}
-	w.WriteStream(a.Len())
+	if a.Len() > 1 {
+		w.WriteStream(a.Len())
+	}
 
+	var v interface{}
 	for a.Next(&v) {
 		w.Write(v)
 		v = nil

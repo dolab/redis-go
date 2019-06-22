@@ -2,16 +2,14 @@ package redis_test
 
 import (
 	"context"
-	"fmt"
 	"log"
-	"math/rand"
-	"net/url"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/golib/assert"
+	"github.com/google/uuid"
 
 	"github.com/dolab/redis-go"
 	"github.com/dolab/redis-go/redistest"
@@ -21,20 +19,21 @@ func TestReverseProxy(t *testing.T) {
 	redistest.TestClient(t, func() (redistest.Client, func(), error) {
 		transport := &redis.Transport{}
 
-		serverList, _, _ := makeServerList()
+		validServers, _, _ := makeServerList()
 
-		_, serverURL := newServer(&redis.ReverseProxy{
+		<-redistest.TestServer(validServers)
+
+		_, serverAddr := newServer(&redis.ReverseProxy{
 			Transport: transport,
-			Registry:  serverList,
-			ErrorLog:  log.New(os.Stderr, "proxy test ==> ", 0),
-		}, serverList)
+			Registry:  validServers,
+			ErrorLog:  log.New(os.Stderr, "[Proxy] ==> ", 0),
+		})
 
 		teardown := func() {
 			transport.CloseIdleConnections()
 		}
 
-		u, _ := url.Parse(serverURL)
-		return &testClient{Client: redis.Client{Addr: u.Host, Transport: transport}}, teardown, nil
+		return &testClient{Client: redis.Client{Addr: serverAddr, Transport: transport}}, teardown, nil
 	})
 }
 
@@ -42,80 +41,112 @@ func TestReverseProxyHash(t *testing.T) {
 	it := assert.New(t)
 	transport := &redis.Transport{}
 
-	full, broken, onedowns := makeServerList()
-	_ = broken
+	validServers, brokenServers, oneDownServers := makeServerList()
+
+	<-redistest.TestServer(validServers)
 
 	proxy := &redis.ReverseProxy{
 		Transport: transport,
-		Registry:  full,
-		ErrorLog:  log.New(os.Stderr, "proxy hash test ==> ", 0),
+		Registry:  validServers,
+		ErrorLog:  log.New(os.Stderr, "[Proxy Hash]", 0),
 	}
 
-	_, serverURL := newServerTimeout(proxy, 10000*time.Millisecond, full)
-	u, _ := url.Parse(serverURL)
+	_, serverAddr := newServerTimeout(proxy, 1000*time.Millisecond)
 	client := &redis.Client{
-		Addr:      u.Host,
+		Addr:      serverAddr,
 		Transport: transport,
 	}
 
-	// full backend - write n keys
-	n := 160
-	keyTempl := "redis-go.test.rphash.%d"
-	sleep := 5 * time.Second
-	timeout := 30 * time.Second
+	// validServers backend - write max keys
+	var (
+		max     = 160
+		templ   = "redis-go.hash." + uuid.New().String() + ".%d"
+		sleep   = 100             // millisecond
+		timeout = 1 * time.Second // client timeout
 
-	numSuccess, numFailure, err := redistest.WriteTestPattern(client, n, keyTempl, sleep, timeout)
+		numHits, numMisses, numSuccess, numFailure, numErrs int
+		err                                                 error
+	)
+	_, _, _ = numHits, numMisses, numErrs
+
+	numSuccess, numFailure, err = redistest.WriteTestPattern(client, max, templ, sleep, timeout)
 	if it.Nil(err) {
-		it.Equal(n, numSuccess, "All writes succeeded")
+		it.Equal(max, numSuccess, "All writes succeeded")
 		it.Equal(0, numFailure, "No writes failed")
 	}
 
-	// full backend - read n back
-	numHits, numMisses, numErrs, err := redistest.ReadTestPattern(client, n, keyTempl, sleep, timeout)
-	t.Logf("full backend n read: numHits = %d, numMisses = %d, numErrs = %d, err = %v", numHits, numMisses, numErrs, err)
+	// validServers backend - read max back
+	numHits, numMisses, numErrs, err = redistest.ReadTestPattern(client, max, templ, sleep, timeout)
+	t.Logf("validServers backend max read: numHits = %d, numMisses = %d, numErrs = %d, err = %v", numHits, numMisses, numErrs, err)
 	if it.Nil(err, "Full backend - no errors") {
-		it.Equal(n, numHits, "Full backend - all hit")
+		it.Equal(max, numHits, "Full backend - all hit")
 		it.Equal(0, numMisses, "Full backend - none missed")
 		it.Equal(0, numErrs, "Full backend - no errors")
 	}
 
-	// full backend - read n+1 back
-	numHits, numMisses, numErrs, err = redistest.ReadTestPattern(client, n+1, keyTempl, sleep, timeout)
-	t.Logf("full backend n+1 read: numHits = %d, numMisses = %d, numErrs = %d, err = %v", numHits, numMisses, numErrs, err)
+	// validServers backend - read max+1 back
+	numHits, numMisses, numErrs, err = redistest.ReadTestPattern(client, max+1, templ, sleep, timeout)
+	t.Logf("validServers backend max+1 read: numHits = %d, numMisses = %d, numErrs = %d, err = %v", numHits, numMisses, numErrs, err)
 	if it.Nil(err, "Extra read - no errors") {
-		it.Equal(n, numHits, "Extra read - all hit")
+		it.Equal(max, numHits, "Extra read - all hit")
 		it.Equal(1, numMisses, "Extra read - one (additional) missed")
 		it.Equal(0, numErrs, "Extra read - no errors")
 	}
 
-	// // malfunctioning backend - read fails
-	// proxy.Registry = broken
-	// numHits, numMisses, numErrs, err = redistest.ReadTestPattern(client, 1, keyTempl, sleep, 2*time.Second)
-	// t.Logf("broken backend n read: numHits = %d, numMisses = %d, numErrs = %d, err = %v", numHits, numMisses, numErrs, err)
-	// if it.NotNil(err, "Broken backend - errors") {
-	// 	it.Equal(0, numHits, "Broken backend - none hit")
-	// 	it.Equal(0, numMisses, "Broken backend - none missed")
-	// 	it.Equal(1, numErrs, "Broken backend - all errors")
-	// }
+	// malfunctioning backend - read oneDownServers
+	proxy.Registry = brokenServers
+	numHits, numMisses, numErrs, err = redistest.ReadTestPattern(client, 1, templ, sleep, 2*time.Second)
+	t.Logf("brokenServers backend max read: numHits = %d, numMisses = %d, numErrs = %d, err = %v", numHits, numMisses, numErrs, err)
+	if it.NotNil(err, "Broken backend - errors") {
+		it.Equal(0, numHits, "Broken backend - none hit")
+		it.Equal(0, numMisses, "Broken backend - none missed")
+		it.Equal(1, numErrs, "Broken backend - all errors")
+	}
 
-	// single backend dropped (all combinations) - read n back
+	// single backend dropped (all combinations) - read max back
 	accHits, accMisses := 0, 0
-	for i := 0; i < len(onedowns); i++ {
-		proxy.Registry = onedowns[i]
-		numHits, numMisses, numErrs, err := redistest.ReadTestPattern(client, n, keyTempl, sleep, timeout)
-		t.Logf("single backend dropped (%d): numHits = %d, numMisses = %d, numErrs = %d, %d%% miss rate, err = %v", i, numHits, numMisses, numErrs, 100*numMisses/n, err)
+	for i := 0; i < len(oneDownServers); i++ {
+		proxy.Registry = oneDownServers[i]
+
+		numHits, numMisses, numErrs, err := redistest.ReadTestPattern(client, max, templ, sleep, timeout)
+		t.Logf("single backend dropped (%d): numHits = %d, numMisses = %d, numErrs = %d, %d%% miss rate, err = %v", i, numHits, numMisses, numErrs, 100*numMisses/max, err)
+
 		if it.Nil(err, "One down - no errors") {
-			it.True(numHits < n, "One down - not all hit")
+			it.True(numHits < max, "One down - not all hit")
 			it.True(numHits > 0, "One down - some hit")
-			it.True(numMisses < n, "One down - not all missed")
+			it.True(numMisses < max, "One down - not all missed")
 			it.True(numMisses > 0, "One down - some missed")
-			it.Equal(n, numHits+numMisses, "One down - hits and misses adds up")
+			it.Equal(max, numHits+numMisses, "One down - hits and misses adds up")
 			it.Equal(0, numErrs, "One down - no errors")
 		}
+
 		accHits += numHits
 		accMisses += numMisses
 	}
-	it.Equal(n, accMisses, "Misses add up")
+	it.Equal(max, accMisses, "Misses add up")
+}
+
+func TestReverseProxy_ServeRedisWithOneshot(t *testing.T) {
+	it := assert.New(t)
+
+	validServers, _, _ := makeServerList()
+	<-redistest.TestServer(validServers)
+
+	proxy := &redis.ReverseProxy{
+		Transport: &redis.Transport{},
+		Registry:  validServers,
+		ErrorLog:  log.New(os.Stderr, "[Proxy Hash Oneshot] ==> ", 0),
+	}
+
+	request := redis.NewRequest(validServers[0].Addr, "SET", redis.List("key", "value"))
+	request.Context = context.TODO()
+
+	response := &responseWriter{}
+
+	proxy.ServeRedis(response, request)
+
+	it.False(response.stream)
+	it.Zero(response.shots)
 }
 
 var benchmarkReverseProxyOnce sync.Once
@@ -123,29 +154,19 @@ var benchmarkReverseProxyOnce sync.Once
 func BenchmarkReverseProxy_ServeRedis(b *testing.B) {
 	transport := &redis.Transport{}
 
-	endpoints, _, _ := makeServerList()
+	validServers, _, _ := makeServerList()
 
 	benchmarkReverseProxyOnce.Do(func() {
-		for _, endpoint := range endpoints {
-			go func(addr string) {
-				log.Println("Starting server ", addr)
-
-				log.Fatal(redis.ListenAndServe(addr, redis.HandlerFunc(func(w redis.ResponseWriter, r *redis.Request) {
-					w.Write("OK")
-					return
-				})))
-			}(endpoint.Addr)
-		}
+		<-redistest.TestServer(validServers)
 	})
 
 	proxy := &redis.ReverseProxy{
 		Transport: transport,
-		Registry:  endpoints,
-		ErrorLog:  log.New(os.Stderr, "proxy hash bench ==> ", 0),
+		Registry:  validServers,
+		ErrorLog:  log.New(os.Stderr, "[Proxy Hash Bench] ==> ", 0),
 	}
 
-	time.Sleep(time.Second)
-	request := redis.NewRequest(endpoints[0].Addr, "SET", redis.List("key", "value"))
+	request := redis.NewRequest(validServers[0].Addr, "SET", redis.List("key", "value"))
 	request.Context = context.TODO()
 
 	response := &responseWriter{}
@@ -159,39 +180,26 @@ func BenchmarkReverseProxy_ServeRedis(b *testing.B) {
 	})
 }
 
-func makeServerList() (full redis.ServerList, broken redis.ServerList, onedowns []redis.ServerList) {
-	full = redis.ServerList{}
-	for i := 0; i < 4; i++ {
-		// rand.Seed(math.MaxInt32)
-
-		full = append(full, redis.ServerEndpoint{
-			Name: "one",
-			Addr: fmt.Sprintf("localhost:1%04d", rand.Intn(10000)+i),
-		})
-	}
-
-	broken = append(full, redis.ServerEndpoint{Name: "zero", Addr: "localhost:0"})
-
-	onedowns = []redis.ServerList{}
-	for i := 0; i < len(full); i++ {
-		// list containing all but the i'th element of full
-		notith := make(redis.ServerList, 0, len(full)-1)
-		for j := 0; j < len(full); j++ {
-			if j != i {
-				notith = append(notith, full[j])
-			}
-		}
-		onedowns = append(onedowns, notith)
-	}
-	return
+type responseWriter struct {
+	mux    sync.Mutex
+	shots  int
+	stream bool
+	values []interface{}
 }
 
-type responseWriter struct{}
-
 func (w *responseWriter) WriteStream(n int) error {
+	w.mux.Lock()
+	w.shots = n
+	w.stream = true
+	w.mux.Unlock()
+
 	return nil
 }
 
 func (w *responseWriter) Write(v interface{}) error {
+	w.mux.Lock()
+	w.values = append(w.values, v)
+	w.mux.Unlock()
+
 	return nil
 }

@@ -4,16 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	fuzz "github.com/google/gofuzz"
 	"github.com/segmentio/objconv/resp"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	redis "github.com/dolab/redis-go"
 )
@@ -353,65 +354,10 @@ func testServerWriteErrorToResponseWriter(t *testing.T, ctx context.Context) {
 }
 
 func newServer(handler redis.Handler, servers ...redis.ServerList) (srv *redis.Server, url string) {
-	return newServerTimeout(handler, 100*time.Millisecond, servers...)
+	return newServerTimeout(handler, 100*time.Millisecond)
 }
 
-func newServerTimeout(handler redis.Handler, timeout time.Duration, servers ...redis.ServerList) (srv *redis.Server, url string) {
-	if len(servers) > 0 {
-		for _, endpoint := range servers[0] {
-			go func(addr string) {
-				log.Println("Starting server ", addr)
-
-				store := sync.Map{}
-
-				log.Fatal(redis.ListenAndServe(addr, redis.HandlerFunc(func(w redis.ResponseWriter, r *redis.Request) {
-					for _, cmd := range r.Cmds {
-						switch cmd.Cmd {
-						case "SET":
-							var (
-								dst string
-
-								args []string
-							)
-							for cmd.Args.Next(&dst) {
-								args = append(args, dst)
-							}
-
-							if len(args) > 0 {
-								if len(args) > 1 {
-									store.Store(args[0], args[1:])
-								} else {
-									store.Store(args[0], nil)
-								}
-							}
-
-							w.Write("")
-						case "GET":
-							w.WriteStream(cmd.Args.Len())
-
-							var (
-								dst string
-							)
-							for cmd.Args.Next(&dst) {
-								v, ok := store.Load(dst)
-								if !ok {
-									w.Write("")
-								} else {
-									vals, ok := v.([]string)
-									if ok {
-										w.Write(strings.Join(vals, " "))
-									} else {
-										w.Write(fmt.Sprintf("%v", v))
-									}
-								}
-							}
-						}
-					}
-				})))
-			}(endpoint.Addr)
-		}
-	}
-
+func newServerTimeout(handler redis.Handler, timeout time.Duration) (srv *redis.Server, addr string) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		panic(err)
@@ -419,22 +365,61 @@ func newServerTimeout(handler redis.Handler, timeout time.Duration, servers ...r
 
 	srv = &redis.Server{
 		Handler:      handler,
-		ReadTimeout:  timeout,
-		WriteTimeout: timeout,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 5 * time.Second,
 		IdleTimeout:  timeout,
-		ErrorLog:     log.New(os.Stderr, "[Godis]", 0),
+		ErrorLog:     log.New(os.Stderr, "[Server]", 0),
 	}
 
 	go func() {
 		err := srv.Serve(l)
 		if err != redis.ErrServerClosed {
-			log.Fatalf("[Godis] %v", err)
+			log.Fatalf("[Server] %v", err)
 		}
 	}()
 
-	addr := l.Addr()
+	addr = l.Addr().String()
 
-	url = addr.Network() + "://" + addr.String()
+	stopCh := make(chan struct{})
+	wait.Until(func() {
+		client := redis.Client{
+			Addr:    addr,
+			Timeout: 10 * time.Millisecond,
+		}
+
+		err := client.Exec(context.Background(), "PING")
+		if err == nil {
+			close(stopCh)
+		}
+	}, time.Millisecond, stopCh)
+	<-stopCh
+
+	return
+}
+
+func makeServerList() (validServers redis.ServerList, brokenServers redis.ServerList, oneDownServers []redis.ServerList) {
+	validServers = redis.ServerList{}
+	for i := 0; i < 4; i++ {
+		validServers = append(validServers, redis.ServerEndpoint{
+			Name: fmt.Sprintf("server-%d", i),
+			Addr: fmt.Sprintf("localhost:1%04d", rand.Intn(10000)+i),
+		})
+	}
+
+	brokenServers = append(redis.ServerList{}, redis.ServerEndpoint{Name: "zero", Addr: "localhost:0"})
+
+	oneDownServers = []redis.ServerList{}
+	for i := 0; i < len(validServers); i++ {
+		// list containing all but the i'th element of validServers
+		notith := make(redis.ServerList, 0, len(validServers)-1)
+		for j := 0; j < len(validServers); j++ {
+			if j != i {
+				notith = append(notith, validServers[j])
+			}
+		}
+
+		oneDownServers = append(oneDownServers, notith)
+	}
 	return
 }
 
