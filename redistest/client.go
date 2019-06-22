@@ -3,12 +3,15 @@ package redistest
 import (
 	"context"
 	"fmt"
+	"log"
 	"math/rand"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	redis "github.com/dolab/redis-go"
 )
@@ -184,20 +187,20 @@ func (err multiError) String() string {
 
 // WriteTestPattern writes a test pattern to a Redis client. The objective is to read the test pattern back
 // at a later stage using ReadTestPattern.
-func WriteTestPattern(client *redis.Client, n int, keyTempl string, sleep time.Duration, timeout time.Duration) (numSuccess int, numFailure int, err error) {
+func WriteTestPattern(client *redis.Client, n int, templ string, sleep int, timeout time.Duration) (numSuccess int, numFailure int, err error) {
 	writeErrs := make(chan error, n)
 
 	var waiter sync.WaitGroup
 	for i := 0; i < n; i++ {
 		waiter.Add(1)
 
-		key := fmt.Sprintf(keyTempl, i)
+		key := fmt.Sprintf(templ, i)
 		val := "1"
 
 		go func(key, val string) {
 			defer waiter.Done()
 
-			time.Sleep(time.Duration(rand.Intn(int(sleep.Seconds()))) * time.Second)
+			time.Sleep(time.Duration(rand.Intn(sleep)+10) * time.Millisecond)
 
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
@@ -226,38 +229,47 @@ func WriteTestPattern(client *redis.Client, n int, keyTempl string, sleep time.D
 	return numSuccess, numFailure, nil
 }
 
-// ReadTestPattern reads a test pattern (previously writen using WriteTestPattern) from a Redis client and returns hit statistics.
-func ReadTestPattern(client *redis.Client, n int, keyTempl string, sleep time.Duration, timeout time.Duration) (numHits int, numMisses int, numErrors int, err error) {
-	type tresult struct {
+// ReadTestPattern reads a test pattern (previously wrote using WriteTestPattern) from a Redis client and returns hit statistics.
+func ReadTestPattern(client *redis.Client, total int, templ string, sleep int, timeout time.Duration) (numHits int, numMisses int, numErrors int, err error) {
+	type result struct {
 		hit bool
 		err error
 	}
-	results := make(chan tresult, n)
+
+	results := make(chan result, total)
+
 	waiter := &sync.WaitGroup{}
 	for i := 0; i < cap(results); i++ {
-		key := fmt.Sprintf(keyTempl, i)
+		key := fmt.Sprintf(templ, i)
+
 		waiter.Add(1)
-		go func(key string, rq chan<- tresult) {
+		go func(key string, rq chan<- result) {
 			defer waiter.Done()
-			time.Sleep(time.Duration(rand.Intn(int(sleep.Seconds()))) * time.Second)
+
+			time.Sleep(time.Duration(rand.Intn(sleep)+10) * time.Millisecond)
+
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
+
 			args := client.Query(ctx, "GET", key)
 			if args.Len() != 1 {
-				rq <- tresult{err: fmt.Errorf("Unexpected response: 1 arg expected; contains %d. ", args.Len())}
+				rq <- result{err: fmt.Errorf("Unexpected response: 1 arg expected; contains %d. ", args.Len())}
 				return
 			}
+
 			var v string
 			args.Next(&v)
 			if err := args.Close(); err != nil {
-				rq <- tresult{err: err}
+				rq <- result{err: err}
 			} else {
-				rq <- tresult{hit: v == "1"}
+				rq <- result{hit: v == "1"}
 			}
 		}(key, results)
 	}
 	waiter.Wait()
+
 	close(results)
+
 	var merr multiError
 	for result := range results {
 		if result.err != nil {
@@ -271,8 +283,102 @@ func ReadTestPattern(client *redis.Client, n int, keyTempl string, sleep time.Du
 			}
 		}
 	}
+
 	if merr != nil {
 		return numHits, numMisses, numErrors, merr
 	}
+
 	return numHits, numMisses, numErrors, nil
+}
+
+func TestServer(serverList redis.ServerList, handlers ...func(w redis.ResponseWriter, r *redis.Request)) <-chan struct{} {
+	allServers := map[string]bool{}
+	for _, endpoint := range serverList {
+		allServers[endpoint.Addr] = true
+
+		go func(addr string) {
+			log.Println("Starting server ", addr)
+
+			handler := TestServerHandler()
+			if len(handlers) > 0 {
+				handler = handlers[0]
+			}
+
+			log.Fatal(redis.ListenAndServe(addr, handler))
+		}(endpoint.Addr)
+	}
+
+	stopCh := make(chan struct{})
+	wait.Until(func() {
+		if len(allServers) == 0 {
+			close(stopCh)
+		}
+
+		for addr := range allServers {
+			client := redis.Client{
+				Addr:    addr,
+				Timeout: 10 * time.Millisecond,
+			}
+
+			err := client.Exec(context.Background(), "PING")
+			if err == nil {
+				delete(allServers, addr)
+			}
+		}
+	}, time.Millisecond, stopCh)
+
+	return stopCh
+}
+
+func TestServerHandler() redis.HandlerFunc {
+	localStore := sync.Map{}
+
+	return func(w redis.ResponseWriter, r *redis.Request) {
+		for _, cmd := range r.Cmds {
+			switch cmd.Cmd {
+			case "PING":
+				w.Write("OK")
+
+			case "SET":
+				var (
+					dst string
+
+					args []string
+				)
+				for cmd.Args.Next(&dst) {
+					args = append(args, dst)
+				}
+
+				if len(args) > 0 {
+					if len(args) > 1 {
+						localStore.Store(args[0], args[1:])
+					} else {
+						localStore.Store(args[0], nil)
+					}
+				}
+
+				w.Write("")
+
+			case "GET":
+				w.WriteStream(cmd.Args.Len())
+
+				var (
+					dst string
+				)
+				for cmd.Args.Next(&dst) {
+					v, ok := localStore.Load(dst)
+					if !ok {
+						w.Write("")
+					} else {
+						vals, ok := v.([]string)
+						if ok {
+							w.Write(strings.Join(vals, " "))
+						} else {
+							w.Write(fmt.Sprintf("%v", v))
+						}
+					}
+				}
+			}
+		}
+	}
 }
