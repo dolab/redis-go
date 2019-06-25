@@ -149,32 +149,26 @@ func TestReverseProxy_ServeRedisWithOneshot(t *testing.T) {
 	it.Zero(response.shots)
 }
 
-var benchmarkReverseProxyOnce sync.Once
-
 func BenchmarkReverseProxy_ServeRedis(b *testing.B) {
-	transport := &redis.Transport{}
-
 	validServers, _, _ := makeServerList()
 
-	benchmarkReverseProxyOnce.Do(func() {
-		<-redistest.TestServer(validServers)
-	})
+	<-redistest.TestServer(validServers)
 
 	proxy := &redis.ReverseProxy{
-		Transport: transport,
+		Transport: redis.DefaultTransport,
 		Registry:  validServers,
 		ErrorLog:  log.New(os.Stderr, "[Proxy Hash Bench] ==> ", 0),
 	}
-
-	request := redis.NewRequest(validServers[0].Addr, "SET", redis.List("key", "value"))
-	request.Context = context.TODO()
-
-	response := &responseWriter{}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
+			request := redis.NewRequest("", "SET", redis.List(uuid.New().String(), "value"))
+			request.Context = context.TODO()
+
+			response := &responseWriter{}
+
 			proxy.ServeRedis(response, request)
 		}
 	})
