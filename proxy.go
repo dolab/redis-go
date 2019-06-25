@@ -34,8 +34,8 @@ func (proxy *ReverseProxy) ServeRedis(w ResponseWriter, r *Request) {
 }
 
 func (proxy *ReverseProxy) serveRequest(w ResponseWriter, req *Request) {
-	keys := make([]string, 0, 10)
 	cmds := req.Cmds
+	keys := make([]string, 0, 10)
 
 	for i := range cmds {
 		keys = cmds[i].getKeys(keys)

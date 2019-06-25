@@ -83,13 +83,13 @@ func (t *Transport) CloseIdleConnections() {
 }
 
 // Subscribe uses the transport's configuration to open a connection to a redis
-// server that subscrribes to the given channels.
+// server that subscribes to the given channels.
 func (t *Transport) Subscribe(ctx context.Context, network string, address string, channels ...string) (*SubConn, error) {
 	return t.sub(ctx, network, address, "SUBSCRIBE", channels...)
 }
 
-// Subscribe uses the transport's configuration to open a connection to a redis
-// server that subscrribes to the given patterns.
+// PSubscribe uses the transport's configuration to open a connection to a redis
+// server that subscribes to the given patterns.
 func (t *Transport) PSubscribe(ctx context.Context, network string, address string, patterns ...string) (*SubConn, error) {
 	return t.sub(ctx, network, address, "PSUBSCRIBE", patterns...)
 }
@@ -199,6 +199,7 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 func (t *Transport) writeRequest(conn *Conn, req *Request, errch chan<- error) {
 	err := conn.WriteCommands(req.Cmds...)
 	req.Close()
+
 	if err != nil {
 		errch <- err
 	}
@@ -218,6 +219,7 @@ func (t *Transport) readResponse(conn *Conn, req *Request, resch chan<- *Respons
 
 func (t *Transport) readTransactionResponse(conn *Conn, req *Request) *Response {
 	args := conn.ReadTxArgs(len(req.Cmds) - 2)
+
 	return &Response{
 		TxArgs: &transportTxArgs{
 			connPoolPutter: connPoolPutter{
@@ -233,7 +235,10 @@ func (t *Transport) readTransactionResponse(conn *Conn, req *Request) *Response 
 
 func (t *Transport) readSimpleResponse(conn *Conn, req *Request) *Response {
 	args := conn.ReadArgs()
-	args.Len() // waits for the first bytes of the response to arrive
+
+	// waits for the first bytes of the response to arrive
+	args.Len()
+
 	return &Response{
 		Args: &transportArgs{
 			connPoolPutter: connPoolPutter{
@@ -258,17 +263,20 @@ func (t *Transport) init() {
 	go func(pingInterval time.Duration, pingTimeout time.Duration) {
 		ticker := time.NewTicker(pingInterval)
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-ticker.C:
 			case <-ctx.Done():
 				return
 			}
+
 			pool.pingIdleConnections(pingTimeout)
 		}
 	}(t.pingInterval(), t.pingTimeout())
 
 	runtime.SetFinalizer(pool, func(*connPool) { cancel() })
+
 	t.pool = pool
 }
 
@@ -284,6 +292,7 @@ func (t *Transport) pingTimeout() time.Duration {
 	if pingTimeout := t.PingTimeout; pingTimeout != 0 {
 		return pingTimeout
 	}
+
 	return 10 * time.Second
 }
 
@@ -291,6 +300,7 @@ func (t *Transport) pingInterval() time.Duration {
 	if pingInterval := t.PingInterval; pingInterval != 0 {
 		return pingInterval
 	}
+
 	return 30 * time.Second
 }
 
@@ -320,10 +330,16 @@ type connPoolPutter struct {
 func (c *connPoolPutter) close(err error) error {
 	if err != nil {
 		if _, stable := err.(*resp.Error); !stable {
-			c.once.Do(func() { c.conn.Close() })
+			c.once.Do(func() {
+				c.conn.Close()
+			})
 		}
 	}
-	c.once.Do(func() { c.pool.putConn(c.host, c.conn) })
+
+	c.once.Do(func() {
+		c.pool.putConn(c.host, c.conn)
+	})
+
 	return err
 }
 
@@ -349,5 +365,6 @@ func splitNetworkAddress(s string) (string, string) {
 	if i := strings.Index(s, "://"); i >= 0 {
 		return s[:i], s[i+3:]
 	}
+
 	return "tcp", s
 }

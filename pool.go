@@ -142,6 +142,7 @@ func (c *connList) len() int {
 func (c *connList) pop() (conn *Conn) {
 	if len(c.popList) == 0 {
 		c.popList, c.pushList = c.pushList, c.popList
+
 		reverse(c.popList)
 	}
 

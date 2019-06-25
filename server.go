@@ -3,7 +3,6 @@ package redis
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -56,29 +55,6 @@ type Hijacker interface {
 	// The returned bufio.Reader may contain unprocessed buffered data from the
 	// client.
 	Hijack() (net.Conn, *bufio.ReadWriter, error)
-}
-
-// A Handler responds to a Redis request.
-//
-// ServeRedis should write reply headers and data to the ResponseWriter and then
-// return. Returning signals that the request is finished; it is not valid to
-// use the ResponseWriter or read from the Request.Args after or concurrently with
-// the completion of the ServeRedis call.
-//
-// Except for reading the argument list, handlers should not modify the provided
-// Request.
-type Handler interface {
-	// ServeRedis is called by a Redis server to handle requests.
-	ServeRedis(ResponseWriter, *Request)
-}
-
-// The HandlerFunc type is an adapter to allow the use of ordinary functions as
-// Redis handlers. If f is a function with the appropriate signature.
-type HandlerFunc func(ResponseWriter, *Request)
-
-// ServeRedis implements the Handler interface, calling f.
-func (f HandlerFunc) ServeRedis(res ResponseWriter, req *Request) {
-	f(res, req)
 }
 
 // A Server defines parameters for running a Redis server.
@@ -169,8 +145,10 @@ func (s *Server) Close() error {
 // to idle and then shut down. If the provided context expires before the shutdown
 // is complete, then the context's error is returned.
 func (s *Server) Shutdown(ctx context.Context) error {
-	const maxPollInterval = 500 * time.Millisecond
-	const minPollInterval = 10 * time.Millisecond
+	const (
+		minPollInterval = 10 * time.Millisecond
+		maxPollInterval = 500 * time.Millisecond
+	)
 
 	s.mutex.Lock()
 
@@ -201,14 +179,15 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // Serve always returns a non-nil error. After Shutdown or Close, the returned
 // error is ErrServerClosed.
 func (s *Server) Serve(l net.Listener) error {
-	const maxBackoffDelay = 1 * time.Second
-	const minBackoffDelay = 10 * time.Millisecond
+	const (
+		minBackoffDelay = 10 * time.Millisecond
+		maxBackoffDelay = 1000 * time.Millisecond
+	)
 
 	defer l.Close()
 	defer s.untrackListener(l)
 
 	s.trackListener(l)
-	attempt := 0
 
 	config := serverConfig{
 		idleTimeout:  s.IdleTimeout,
@@ -220,6 +199,8 @@ func (s *Server) Serve(l net.Listener) error {
 		config.idleTimeout = config.readTimeout
 	}
 
+	attempt := 0
+
 	for {
 		conn, err := l.Accept()
 
@@ -229,15 +210,18 @@ func (s *Server) Serve(l net.Listener) error {
 			case <-s.context.Done():
 				return ErrServerClosed
 			}
+
 			switch {
 			case isTimeout(err):
 				continue
 			case isTemporary(err):
 				attempt++
+
 				select {
 				case <-time.After(backoff(attempt, minBackoffDelay, maxBackoffDelay)):
 				case <-s.context.Done():
 				}
+
 				continue
 			default:
 				return err
@@ -344,6 +328,7 @@ func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serv
 	}
 
 	err = s.serveRequest(res, req)
+
 	req.Close()
 	cancel()
 	return
@@ -379,11 +364,12 @@ func (s *Server) serveRequest(res *responseWriter, req *Request) (err error) {
 
 	if preparedRes != nil {
 		w = preparedRes
+
 		w.WriteStream(len(req.Cmds) + len(preparedRes.responses))
 	}
 
 	if req.Cmds = req.Cmds[:i]; len(req.Cmds) != 0 {
-		s.serveRedis(w, req)
+		err = s.serveRedis(w, req)
 	}
 
 	if err == nil && preparedRes != nil {
@@ -403,17 +389,18 @@ func (s *Server) serveRedis(res ResponseWriter, req *Request) (err error) {
 			err = convertPanicToError(v)
 		}
 	}()
+
 	s.Handler.ServeRedis(res, req)
 	return
 }
 
 func (s *Server) log(err error) {
 	if err != ErrHijacked {
-		print := log.Print
-		if logger := s.ErrorLog; logger != nil {
-			print = logger.Print
+		lprint := log.Print
+		if s.ErrorLog != nil {
+			lprint = s.ErrorLog.Print
 		}
-		print(err)
+		lprint(err)
 	}
 }
 
@@ -505,6 +492,7 @@ func backoff(attempt int, minDelay time.Duration, maxDelay time.Duration) time.D
 	if d > maxDelay {
 		d = maxDelay
 	}
+
 	return d
 }
 
@@ -668,6 +656,7 @@ func (res *preparedResponseWriter) Hijack() (c net.Conn, rw *bufio.ReadWriter, e
 	} else {
 		err = ErrNotHijackable
 	}
+
 	return
 }
 
@@ -680,16 +669,3 @@ func (res *preparedResponseWriter) writeRemainingValues() (err error) {
 	res.responses = nil
 	return
 }
-
-var (
-	// ErrServerClosed is returned by Server.Serve when the server is closed.
-	ErrNilArgs                       = errors.New("cannot parse values from a nil argument list")
-	ErrServerClosed                  = errors.New("redis: Server closed")
-	ErrNegativeStreamCount           = errors.New("invalid call to redis.ResponseWriter.WriteStream with a negative value")
-	ErrWriteStreamCalledAfterWrite   = errors.New("invalid call to redis.ResponseWriter.WriteStream after redis.ResponseWriter.Write was called")
-	ErrWriteStreamCalledTooManyTimes = errors.New("multiple calls to ResponseWriter.WriteStream")
-	ErrWriteCalledTooManyTimes       = errors.New("too many calls to redis.ResponseWriter.Write")
-	ErrWriteCalledNotEnoughTimes     = errors.New("not enough calls to redis.ResponseWriter.Write")
-	ErrHijacked                      = errors.New("invalid use of a hijacked redis.ResponseWriter")
-	ErrNotHijackable                 = errors.New("the response writer is not hijackable")
-)

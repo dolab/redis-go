@@ -297,7 +297,7 @@ func TestServer(serverList redis.ServerList, handlers ...func(w redis.ResponseWr
 		allServers[endpoint.Addr] = true
 
 		go func(addr string) {
-			log.Println("Starting server ", addr)
+			// log.Println("Starting server ", addr)
 
 			handler := TestServerHandler()
 			if len(handlers) > 0 {
