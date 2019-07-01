@@ -1,41 +1,86 @@
-machine:
-  pre:
-    - curl -sSL https://s3.amazonaws.com/circle-downloads/install-circleci-docker.sh | bash -s -- 1.10.0
-  services:
-    - docker
+# Golang CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-go/ for more details
+version: 2
+defaults: &defaults
+  #### TEMPLATE_NOTE: go expects specific checkout path representing url
+  #### expecting it in the form of
+  ####   /go/src/github.com/circleci/go-tool
+  ####   /go/src/bitbucket.org/circleci/go-tool
+  working_directory: /go/src/github.com/dolab/redis-go
+default_steps: &default_steps
+  steps:
+    - checkout
 
-dependencies:
-  pre:
-    - sudo pip install awscli==1.11.76
-    - $(aws ecr get-login --region $AWS_REGION)
-  override:
-    - docker pull segment/golang:latest
+    # specify any bash command here prefixed with `run: `
+    - run: go mod tidy -v
+    - run: go test -v -cover github.com/dolab/redis-go/metrics
+    - run: go test -v -race github.com/dolab/redis-go/metrics
+    - run: go test -v -cover github.com/dolab/redis-go
+    - run: go test -v -race github.com/dolab/redis-go
+jobs:
+  go1.6:
+    <<: *defaults
+    docker:
+      # specify the version
+      - image: golang:1.6
 
-test:
-  override:
-    - >
-      docker run
-      $(env | grep -E '^CIRCLE_|^DOCKER_|^CIRCLECI=|^CI=' | sed 's/^/--env /g' | tr "\\n" " ")
-      --rm
-      --tty
-      --interactive
-      --name go
-      --net host
-      --volume /var/run/docker.sock:/run/docker.sock
-      --volume ${GOPATH%%:*}/src:/go/src
-      --volume ${PWD}:/go/src/github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}
-      --workdir /go/src/github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}
-      segment/golang:latest
-      go.build="CGO_ENABLED=0 go build -ldflags \"-X main.version=${CIRCLE_TAGS:-$CIRCLE_SHA1}\" ./cmd/red"
-    - docker build -t segment/red .
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+    <<: *default_steps
+  go1.8:
+    <<: *defaults
+    docker:
+      # specify the version
+      - image: circleci/golang:1.8
 
-deployment:
-  release:
-    tag: /.*/
-    commands:
-      - docker tag segment/red segment/red:${CIRCLE_TAG}
-      - docker tag segment/red segment/red:${CIRCLE_TAG} $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/red:${CIRCLE_TAG}
-      - docker tag segment/red segment/red:${CIRCLE_TAG} $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/red:latest
-      - docker login -e ${DOCKER_EMAIL} -u ${DOCKER_USER} -p ${DOCKER_PASS}
-      - docker push segment/red
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/red
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+    <<: *default_steps
+  go1.11:
+    <<: *defaults
+    docker:
+      # specify the version
+      - image: circleci/golang:1.11
+
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+    <<: *default_steps
+  go1.12:
+    <<: *defaults
+    docker:
+      # specify the version
+      - image: circleci/golang:1.12.6
+
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+    <<: *default_steps
+  go:
+    <<: *defaults
+    docker:
+      # specify the version
+      - image: circleci/golang:latest
+
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      # - image: circleci/postgres:9.4
+    <<: *default_steps
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      #- go1.6
+      #- go1.8
+      #- go1.11
+      - go1.12
+      - go

@@ -33,13 +33,13 @@ type Conn struct {
 	emitter resp.ClientEmitter
 }
 
-// Dial connects to the redis server at the given address, returing a new client
+// Dial connects to the redis server at the given address, returning a new client
 // redis connection.
 func Dial(network string, address string) (*Conn, error) {
 	return DialContext(context.Background(), network, address)
 }
 
-// Dial connects to the redis server at the given address, returing a new client
+// Dial connects to the redis server at the given address, returning a new client
 // redis connection. Connecting may be asynchronously cancelled by the context
 // passed as first argument.
 func DialContext(ctx context.Context, network string, address string) (*Conn, error) {
@@ -125,47 +125,50 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
 }
 
-// Read reads upt to len(b) bytes from c, returning the number of bytes read,
+// Read reads up to len(b) bytes from c, returning the number of bytes read,
 // and an error if something went wrong while reading from the connection.
 //
 // The function is exposed for the sole purpose of satisfying the net.Conn
 // interface, it doesn't check that the data read are leaving the connection in
-// a valid state in reagrd to the semantics of the redis protocol.
+// a valid state in regard to the semantics of the redis protocol.
 func (c *Conn) Read(b []byte) (int, error) {
 	c.rmutex.Lock()
 	n, err := c.rbuffer.Read(b)
 	c.rmutex.Unlock()
+
 	return n, err
 }
 
-// Write writes b ot c, returning the number obytes written, and an error if
+// Write writes b to c, returning the number of bytes written, and an error if
 // something went wrong while writing to the connection.
 //
-// The function is exposed for the sole purpose of satsifying the net.Conn
+// The function is exposed for the sole purpose of satisfying the net.Conn
 // interface, it doesn't check that the data written to the connection are
 // meaningful messages in the redis protocol.
 func (c *Conn) Write(b []byte) (int, error) {
 	c.wmutex.Lock()
-	n, err := c.wbuffer.Write(b)
 
+	n, err := c.wbuffer.Write(b)
 	if err != nil {
 		c.conn.Close()
 	}
 
 	c.wmutex.Unlock()
+
 	return n, err
 }
 
 // Flush flushes the connection's internal write buffer.
 func (c *Conn) Flush() error {
 	c.wmutex.Lock()
-	err := c.wbuffer.Flush()
 
+	err := c.wbuffer.Flush()
 	if err != nil {
 		c.conn.Close()
 	}
 
 	c.wmutex.Unlock()
+
 	return err
 }
 
@@ -177,7 +180,9 @@ func (c *Conn) Flush() error {
 // that method or the connection will be left in an unusable state.
 func (c *Conn) ReadCommands() *CommandReader {
 	c.rmutex.Lock()
+
 	c.resetDecoder()
+
 	return &CommandReader{
 		conn:    c,
 		decoder: c.decoder,
@@ -193,7 +198,9 @@ func (c *Conn) ReadCommands() *CommandReader {
 // the call to the Args' Close method.
 func (c *Conn) ReadArgs() Args {
 	c.rmutex.Lock()
+
 	c.resetDecoder()
+
 	return &connArgs{
 		conn:    c,
 		decoder: c.decoder,
@@ -206,9 +213,10 @@ func (c *Conn) ReadArgs() Args {
 //
 // If an error occurs while reading the transaction queuing responses it will be
 // returned by the TxArgs' Close method, the ReadTxArgs method never returns a
-// nil object, even if the connetion was closed.
+// nil object, even if the connection was closed.
 func (c *Conn) ReadTxArgs(n int) TxArgs {
 	c.rmutex.Lock()
+
 	c.resetDecoder()
 
 	tx := &txArgs{
@@ -217,8 +225,8 @@ func (c *Conn) ReadTxArgs(n int) TxArgs {
 	}
 
 	cnt := 0
-	err := c.readMultiArgs(tx)
 
+	err := c.readMultiArgs(tx)
 	if err == nil {
 		for i := 0; i != n && err == nil; i++ {
 			cnt, err = c.readTxArgs(tx, i, cnt)
@@ -312,13 +320,13 @@ func (c *Conn) readTxExecArgs(tx *txArgs, n int) error {
 }
 
 func (c *Conn) readTxArgs(tx *txArgs, i int, n int) (int, error) {
-	status, error, err := c.readTxStatus()
+	status, rerr, err := c.readTxStatus()
 
 	switch {
 	case err != nil:
 
-	case error != nil:
-		tx.args[i] = &connArgs{tx: tx, respErr: error}
+	case rerr != nil:
+		tx.args[i] = &connArgs{tx: tx, respErr: rerr}
 
 	case status == "QUEUED":
 		tx.args[i] = &connArgs{conn: c, tx: tx, decoder: c.decoder}
@@ -331,7 +339,7 @@ func (c *Conn) readTxArgs(tx *txArgs, i int, n int) (int, error) {
 	return n, err
 }
 
-func (c *Conn) readTxStatus() (status string, error *resp.Error, err error) {
+func (c *Conn) readTxStatus() (status string, rerr *resp.Error, err error) {
 	var val interface{}
 	var dec = objconv.Decoder{Parser: c.decoder.Parser}
 
@@ -344,7 +352,7 @@ func (c *Conn) readTxStatus() (status string, error *resp.Error, err error) {
 		status = v
 
 	case *resp.Error:
-		error = v
+		rerr = v
 
 	default:
 		err = fmt.Errorf("unsupported value of type %T returned while reading responses of a redis transaction", v)
@@ -360,9 +368,10 @@ func (c *Conn) readTxStatus() (status string, error *resp.Error, err error) {
 // it was left it a recoverable state.
 func (c *Conn) WriteArgs(args Args) error {
 	c.wmutex.Lock()
-	c.resetEncoder()
-	err := c.writeArgs(args)
 
+	c.resetEncoder()
+
+	err := c.writeArgs(args)
 	if err == nil {
 		err = c.wbuffer.Flush()
 	}
@@ -522,17 +531,17 @@ type connArgs struct {
 }
 
 func (args *connArgs) Close() error {
-	var err error
 	args.mutex.Lock()
+
+	var err error
 
 	if args.conn != nil {
 		for args.next(nil) == nil {
 			// discard all remaining arguments in an attempt to maintain the
 			// connection in a stable state
 		}
-		if err == nil {
-			err = args.decoder.Err()
-		}
+
+		err = args.decoder.Err()
 	}
 
 	if err == nil && args.respErr != nil {
@@ -543,9 +552,11 @@ func (args *connArgs) Close() error {
 		if _, stable := err.(*resp.Error); err != nil && !stable {
 			args.conn.Close()
 		}
-		if args.tx == nil { // no transcation, owner of the connection read lock
+
+		if args.tx == nil { // no transaction, owner of the connection read lock
 			args.conn.rmutex.Unlock()
 		}
+
 		args.conn = nil
 	}
 
@@ -568,9 +579,9 @@ func (args *connArgs) Len() (n int) {
 }
 
 func (args *connArgs) Next(dst interface{}) bool {
-	var err error
 	args.mutex.Lock()
 
+	var err error
 	if args.respErr != nil {
 		err = args.respErr
 	} else {

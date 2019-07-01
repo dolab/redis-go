@@ -6,17 +6,22 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/golib/assert"
 	fuzz "github.com/google/gofuzz"
+	"github.com/google/uuid"
 	"github.com/segmentio/objconv/resp"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	redis "github.com/dolab/redis-go"
+	"github.com/dolab/redis-go"
 )
 
 func TestServer(t *testing.T) {
@@ -73,6 +78,64 @@ func TestServer(t *testing.T) {
 			testFunc(t, ctx)
 		})
 	}
+}
+
+func TestServerMetrics(t *testing.T) {
+	it := assert.New(t)
+
+	respErr := resp.NewError("ERR something went wrong")
+
+	var counter int64
+	srv, addr := newServer(redis.HandlerFunc(func(res redis.ResponseWriter, req *redis.Request) {
+		if atomic.AddInt64(&counter, 1)%2 == 0 {
+			res.Write(respErr)
+		} else {
+			res.Write("OK")
+		}
+
+	}))
+	defer srv.Close()
+
+	tr := &redis.Transport{MaxIdleConns: 1}
+	defer tr.CloseIdleConnections()
+
+	cli := &redis.Client{Addr: addr, Transport: tr}
+	key := uuid.New().String()
+	value := uuid.New().String()
+
+	// set
+	setErr := cli.Exec(context.Background(), "SET", key, value)
+	if it.Nil(setErr) {
+		// del, it should return error
+		delErr := cli.Exec(context.Background(), "DEL", key)
+		it.EqualErrors(respErr, delErr)
+
+		// get, it should ok
+		getCmd := cli.Query(context.Background(), "GET", key)
+
+		var getValue string
+		if getCmd.Next(&getValue) {
+			it.Equal("OK", getValue)
+		}
+	}
+
+	// for metrics
+	r := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
+	w := httptest.NewRecorder()
+
+	srv.ServeMetrics(w, r)
+
+	output := w.Body.String()
+	it.Contains(output, `redis_server_requests_total{remote_addr="127.0.0.1"} 4`)
+	it.Contains(output, `redis_server_requests{remote_addr="127.0.0.1"} 0`)
+	it.Contains(output, `redis_server_commands_total{cmd="PING",remote_addr="127.0.0.1"} 1`)
+	it.Contains(output, `redis_server_commands_total{cmd="SET",remote_addr="127.0.0.1"} 1`)
+	it.Contains(output, `redis_server_commands_total{cmd="GET",remote_addr="127.0.0.1"} 1`)
+	it.Contains(output, `redis_server_commands_total{cmd="DEL",remote_addr="127.0.0.1"} 1`)
+	it.Contains(output, `redis_server_commands{cmd="PING",remote_addr="127.0.0.1"} 0`)
+	it.Contains(output, `redis_server_commands{cmd="SET",remote_addr="127.0.0.1"} 0`)
+	it.Contains(output, `redis_server_commands{cmd="GET",remote_addr="127.0.0.1"} 0`)
+	it.Contains(output, `redis_server_commands{cmd="DEL",remote_addr="127.0.0.1"} 0`)
 }
 
 func testServerCloseAfterStart(t *testing.T, ctx context.Context) {
@@ -391,7 +454,7 @@ func newServerTimeout(handler redis.Handler, timeout time.Duration) (srv *redis.
 		if err == nil {
 			close(stopCh)
 		}
-	}, time.Millisecond, stopCh)
+	}, 10*time.Millisecond, stopCh)
 	<-stopCh
 
 	return
