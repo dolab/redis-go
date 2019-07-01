@@ -16,11 +16,11 @@ func NewMonitor(labels prometheus.Labels) *Monitor {
 		prometheus.CounterOpts{
 			Namespace:   "redis",
 			Subsystem:   "client",
-			Name:        "total_reconnects",
+			Name:        "reconnects_total",
 			Help:        "Total number of reconnects made by server to redis back server.",
 			ConstLabels: labels,
 		},
-		[]string{"address"},
+		[]string{"local_addr", "remote_addr"},
 	)
 
 	return &Monitor{

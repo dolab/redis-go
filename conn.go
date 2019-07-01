@@ -62,6 +62,19 @@ func NewClientConn(conn net.Conn) *Conn {
 	c.emitter.Reset(&c.wbuffer)
 	c.decoder = objconv.StreamDecoder{Parser: &c.parser}
 	c.encoder = objconv.StreamEncoder{Emitter: &c.emitter}
+
+	var (
+		localAddr, remoteAddr string
+	)
+	if local := c.LocalAddr(); local != nil {
+		localAddr = local.String()
+	}
+	if remote := c.RemoteAddr(); remote != nil {
+		remoteAddr = remote.String()
+	}
+
+	gometrics.Dialer(localAddr, remoteAddr)
+
 	return c
 }
 
