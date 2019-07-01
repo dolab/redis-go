@@ -6,11 +6,17 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/segmentio/objconv"
 	"github.com/segmentio/objconv/resp"
+
+	"github.com/dolab/redis-go/metrics"
 )
 
 // A ResponseWriter interface is used by a Redis handler to construct an Redis
@@ -87,9 +93,12 @@ type Server struct {
 	ErrorLog Logger
 
 	mutex       sync.Mutex
+	serveOnce   sync.Once
 	listeners   map[net.Listener]struct{}
 	connections map[*Conn]struct{}
 	context     context.Context
+	metrics     *metrics.Metrics
+	metricsOnce sync.Once
 	shutdown    context.CancelFunc
 }
 
@@ -113,6 +122,17 @@ func (s *Server) ListenAndServe() error {
 	}
 
 	return s.Serve(l)
+}
+
+func (s *Server) ServeMetrics(w http.ResponseWriter, r *http.Request) {
+	s.metricsOnce.Do(func() {
+		err := prometheus.Register(s.metrics)
+		if err != nil {
+			s.log(fmt.Errorf("prometheus.Register(%T): %v", s.metrics, err))
+		}
+	})
+
+	promhttp.Handler().ServeHTTP(w, r)
 }
 
 // Close immediately closes all active net.Listeners and any connections.
@@ -179,6 +199,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // Serve always returns a non-nil error. After Shutdown or Close, the returned
 // error is ErrServerClosed.
 func (s *Server) Serve(l net.Listener) error {
+	s.serveOnce.Do(func() {
+		s.metrics = metrics.NewMetrics(nil)
+	})
+
 	const (
 		minBackoffDelay = 10 * time.Millisecond
 		maxBackoffDelay = 1000 * time.Millisecond
@@ -220,6 +244,7 @@ func (s *Server) Serve(l net.Listener) error {
 				select {
 				case <-time.After(backoff(attempt, minBackoffDelay, maxBackoffDelay)):
 				case <-s.context.Done():
+					return ErrServerClosed
 				}
 
 				continue
@@ -241,7 +266,13 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 	defer c.Close()
 	defer s.untrackConnection(c)
 
-	var addr = c.RemoteAddr().String()
+	var (
+		remoteAddr = c.RemoteAddr().String()
+		localAddr  = c.LocalAddr().String()
+	)
+	s.metrics.IncConnection(remoteAddr, localAddr)
+	defer s.metrics.DecConnection(remoteAddr, localAddr)
+
 	for {
 		select {
 		default:
@@ -301,7 +332,7 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 			cmds = cmds[1:lastIndex]
 		}
 
-		if err := s.serveCommands(c, addr, cmds, config); err != nil {
+		if err := s.serveCommands(c, remoteAddr, cmds, config); err != nil {
 			s.log(err)
 			return
 		}
@@ -314,6 +345,21 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 }
 
 func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serverConfig) (err error) {
+	var (
+		remoteHost = addr
+		names      = make([]string, len(cmds))
+		issuedAt   = time.Now()
+	)
+	if n := strings.IndexByte(addr, ':'); n > 0 {
+		remoteHost = addr[:n]
+	}
+	for i, cmd := range cmds {
+		names[i] = cmd.Cmd
+	}
+
+	s.metrics.IncRequest(remoteHost)
+	s.metrics.IncCommands(remoteHost, names)
+
 	ctx, cancel := context.WithTimeout(context.Background(), config.readTimeout)
 
 	req := &Request{
@@ -331,6 +377,13 @@ func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serv
 
 	req.Close()
 	cancel()
+
+	s.metrics.ObserveRequest(remoteHost, issuedAt)
+	s.metrics.DecRequest(remoteHost)
+	s.metrics.DecCommands(remoteHost, names)
+	if err != nil {
+		s.metrics.IncErrors(remoteHost, names)
+	}
 	return
 }
 
@@ -430,12 +483,15 @@ func (s *Server) trackConnection(c *Conn) {
 	}
 
 	s.connections[c] = struct{}{}
+
 	s.mutex.Unlock()
 }
 
 func (s *Server) untrackConnection(c *Conn) {
 	s.mutex.Lock()
+
 	delete(s.connections, c)
+
 	s.mutex.Unlock()
 }
 

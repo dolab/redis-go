@@ -17,8 +17,10 @@ default_steps: &default_steps
 
     # specify any bash command here prefixed with `run: `
     - run: GO111MODULE=on go mod tidy -v
-    - run: GO111MODULE=on go test -v
-    - run: GO111MODULE=on go test -v -race
+    - run: GO111MODULE=on go test -v github.com/dolab/redis-go/metrics
+    - run: GO111MODULE=on go test -v -race github.com/dolab/redis-go/metrics
+    - run: GO111MODULE=on go test -v github.com/dolab/redis-go
+    - run: GO111MODULE=on go test -v -race github.com/dolab/redis-go
 jobs:
   go1.6:
     <<: *defaults

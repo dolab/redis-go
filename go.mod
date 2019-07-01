@@ -7,6 +7,7 @@ require (
 	github.com/google/gofuzz v1.0.0
 	github.com/google/uuid v1.1.1
 	github.com/pkg/errors v0.8.1 // indirect
+	github.com/prometheus/client_golang v1.0.0
 	github.com/segmentio/conf v1.1.0
 	github.com/segmentio/consul-go v1.3.0
 	github.com/segmentio/events v2.1.0+incompatible
