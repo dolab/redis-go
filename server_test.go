@@ -30,6 +30,10 @@ func TestServer(t *testing.T) {
 		function func(*testing.T, context.Context)
 	}{
 		{
+			scenario: "server with metrics",
+			function: testServerMetrics,
+		},
+		{
 			scenario: "close a server right after starting it",
 			function: testServerCloseAfterStart,
 		},
@@ -80,7 +84,7 @@ func TestServer(t *testing.T) {
 	}
 }
 
-func TestServerMetrics(t *testing.T) {
+func testServerMetrics(t *testing.T, ctx context.Context) {
 	it := assert.New(t)
 
 	respErr := resp.NewError("ERR something went wrong")
@@ -119,23 +123,23 @@ func TestServerMetrics(t *testing.T) {
 		}
 	}
 
-	// for metrics
+	// for gometrics
 	r := httptest.NewRequest(http.MethodGet, "https://example.com", nil)
 	w := httptest.NewRecorder()
 
-	srv.ServeMetrics(w, r)
+	redis.ServeMetrics(w, r)
 
 	output := w.Body.String()
-	it.Contains(output, `redis_server_requests_total{remote_addr="127.0.0.1"} 4`)
-	it.Contains(output, `redis_server_requests{remote_addr="127.0.0.1"} 0`)
-	it.Contains(output, `redis_server_commands_total{cmd="PING",remote_addr="127.0.0.1"} 1`)
-	it.Contains(output, `redis_server_commands_total{cmd="SET",remote_addr="127.0.0.1"} 1`)
-	it.Contains(output, `redis_server_commands_total{cmd="GET",remote_addr="127.0.0.1"} 1`)
-	it.Contains(output, `redis_server_commands_total{cmd="DEL",remote_addr="127.0.0.1"} 1`)
-	it.Contains(output, `redis_server_commands{cmd="PING",remote_addr="127.0.0.1"} 0`)
-	it.Contains(output, `redis_server_commands{cmd="SET",remote_addr="127.0.0.1"} 0`)
-	it.Contains(output, `redis_server_commands{cmd="GET",remote_addr="127.0.0.1"} 0`)
-	it.Contains(output, `redis_server_commands{cmd="DEL",remote_addr="127.0.0.1"} 0`)
+	it.Contains(output, `redis_server_requests_total{remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_server_requests{remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_server_commands_total{cmd="PING",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_server_commands_total{cmd="SET",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_server_commands_total{cmd="GET",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_server_commands_total{cmd="DEL",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_server_commands{cmd="PING",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_server_commands{cmd="SET",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_server_commands{cmd="GET",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_server_commands{cmd="DEL",remote_addr="127.0.0.1"}`)
 }
 
 func testServerCloseAfterStart(t *testing.T, ctx context.Context) {

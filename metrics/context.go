@@ -7,26 +7,64 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func (m *Metrics) IncConnection(remoteAddr, localAddr string) {
+func (m *Metrics) Dialer(localAddr, remoteAddr string) {
+	localN := len(localAddr)
+	if n := strings.IndexByte(localAddr, ':'); n > 0 {
+		localN = n
+	}
+
+	remoteN := len(remoteAddr)
+	if n := strings.IndexByte(remoteAddr, ':'); n > 0 {
+		remoteN = n
+	}
+
 	labels := prometheus.Labels{
-		"remote_addr": remoteAddr,
-		"local_addr":  localAddr,
+		"local_addr":  localAddr[:localN],
+		"remote_addr": remoteAddr[:remoteN],
+	}
+
+	m.monitor.dialer.With(labels).Inc()
+}
+
+func (m *Metrics) IncConnection(remoteAddr, localAddr string) {
+	localN := len(localAddr)
+	if n := strings.IndexByte(localAddr, ':'); n > 0 {
+		localN = n
+	}
+
+	remoteN := len(remoteAddr)
+	if n := strings.IndexByte(remoteAddr, ':'); n > 0 {
+		remoteN = n
+	}
+
+	labels := prometheus.Labels{
+		"local_addr":  localAddr[:localN],
+		"remote_addr": remoteAddr[:remoteN],
 	}
 
 	m.monitor.server.connections.With(labels).Inc()
 }
 
 func (m *Metrics) DecConnection(remoteAddr, localAddr string) {
+	localN := len(localAddr)
+	if n := strings.IndexByte(localAddr, ':'); n > 0 {
+		localN = n
+	}
+
+	remoteN := len(remoteAddr)
+	if n := strings.IndexByte(remoteAddr, ':'); n > 0 {
+		remoteN = n
+	}
+
 	labels := prometheus.Labels{
-		"remote_addr": remoteAddr,
-		"local_addr":  localAddr,
+		"local_addr":  localAddr[:localN],
+		"remote_addr": remoteAddr[:remoteN],
 	}
 
 	m.monitor.server.connections.With(labels).Dec()
 }
 
 func (m *Metrics) IncRequest(remoteAddr string) {
-
 	labels := prometheus.Labels{
 		"remote_addr": remoteAddr,
 	}

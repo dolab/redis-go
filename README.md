@@ -79,3 +79,45 @@ func main() {
     }))
 }
 ```
+
+## Metrics
+
+```go
+package main
+
+import (
+    "net/http"
+
+    "github.com/prometheus/client_golang/prometheus"
+
+    "github.com/dolab/redis-go"
+)
+
+func main() {
+    // Starts a new http server async for prom.
+    go http.ListenAndServe(":8080", http.HandlerFunc(redis.ServeMetrics))
+
+    // Starts a new counter for local usage.
+    counter := redis.NewCounterVec("handler", "custom handler counter", []string{"cmd"})
+
+    // Starts a new server speaking the redis protocol, the server automatically
+    // handle asynchronusly pipelining the requests and responses.
+
+    redis.ListenAndServe(":6380", redis.HandlerFunc(func(res redis.ResponseWriter, req *redis.Request) {
+        for _, cmd := range req.Cmds {
+            counter.With(prometheus.Labels{
+                "cmd": cmd.Cmd,
+            }).Inc()
+        }
+
+        // Put the response in streaming mode, will send 3 values.
+        res.WriteStream(3)
+
+        // The response writer automatically encodes Go values into their RESP
+        // representation.
+        res.Write(1)
+        res.Write(2)
+        res.Write(3)
+    }))
+}
+```
