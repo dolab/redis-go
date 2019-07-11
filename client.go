@@ -106,7 +106,7 @@ func (c *Client) Query(ctx context.Context, cmd string, args ...interface{}) Arg
 
 	r, err := c.Do(&Request{
 		Addr:    addr,
-		Cmds:    []Command{{cmd, List(args...)}},
+		Cmds:    []Command{{Cmd: cmd, Args: List(args...)}},
 		Context: ctx,
 	})
 	if err != nil {

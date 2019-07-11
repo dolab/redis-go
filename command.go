@@ -22,12 +22,26 @@ type Command struct {
 	// For server request, Args is never nil, even if there are no values in
 	// the argument list.
 	Args Args
+
+	// for retry
+	args [][]byte
+	argn int
 }
 
 // ParseArgs parses the list of arguments from the command into the destination
 // pointers, returning an error if something went wrong.
 func (cmd *Command) ParseArgs(dsts ...interface{}) error {
 	return ParseArgs(cmd.Args, dsts...)
+}
+
+// newCommand returns a command for request reuse.
+//
+// NOTE: It CANNOT be exported cause it should ensure the command is idempotent, see Response.Retry() for details!
+func (cmd *Command) newCommand() Command {
+	return Command{
+		Cmd:  cmd.Cmd,
+		Args: &byteArgs{args: cmd.args},
+	}
 }
 
 func (cmd *Command) getKeys(keys []string) []string {
@@ -64,18 +78,25 @@ func (cmd *Command) loadByteArgs() {
 	}
 }
 
+func (cmd *Command) appendArg(arg []byte) {
+	cmd.args[cmd.argn] = make([]byte, len(arg))
+	copy(cmd.args[cmd.argn], arg)
+
+	cmd.argn++
+}
+
 // CommandReader is a type produced by the Conn.ReadCommands method to read a
 // single command or a sequence of commands belonging to the same transaction.
 type CommandReader struct {
-	mutex   sync.Mutex
-	conn    *Conn
-	decoder objconv.StreamDecoder
-	multi   bool
-	done    bool
-	err     error
+	mutex sync.Mutex
+	conn  *Conn
+	dec   objconv.StreamDecoder
+	multi bool
+	done  bool
+	err   error
 }
 
-// Close closes the comand reader, it must be called when all commands have been
+// Close closes the command reader, it must be called when all commands have been
 // read from the reader in order to release the parent connection's read lock.
 func (r *CommandReader) Close() error {
 	r.mutex.Lock()
@@ -102,7 +123,6 @@ func (r *CommandReader) Close() error {
 // The method returns true if a command could be read, or false if there were
 // no more commands to read from the reader.
 func (r *CommandReader) Read(cmd *Command) bool {
-	*cmd = Command{}
 	r.mutex.Lock()
 	r.resetDecoder()
 
@@ -111,8 +131,10 @@ func (r *CommandReader) Read(cmd *Command) bool {
 		return false
 	}
 
-	if err := r.decoder.Decode(&cmd.Cmd); err != nil {
-		r.err = r.decoder.Err()
+	*cmd = Command{}
+
+	if err := r.dec.Decode(&cmd.Cmd); err != nil {
+		r.err = r.dec.Err()
 		r.done = true
 		r.mutex.Unlock()
 		return false
@@ -125,24 +147,26 @@ func (r *CommandReader) Read(cmd *Command) bool {
 		r.done = !r.multi
 	}
 
-	cmd.Args = newCmdArgsReader(r.decoder, r)
+	cmd.args = make([][]byte, r.dec.Len())
+	cmd.Args = newCmdArgsReader(r.dec, r, cmd)
 	return true
 }
 
 func (r *CommandReader) resetDecoder() {
-	r.decoder = objconv.StreamDecoder{Parser: r.decoder.Parser}
+	r.dec = objconv.StreamDecoder{Parser: r.dec.Parser}
 }
 
-func newCmdArgsReader(d objconv.StreamDecoder, r *CommandReader) *cmdArgsReader {
-	args := &cmdArgsReader{dec: d, r: r}
+func newCmdArgsReader(d objconv.StreamDecoder, r *CommandReader, cmd *Command) *cmdArgsReader {
+	args := &cmdArgsReader{cmd: cmd, dec: d, r: r}
 	args.b = args.a[:0]
 	return args
 }
 
 type cmdArgsReader struct {
 	once sync.Once
-	err  error
+	cmd  *Command
 	dec  objconv.StreamDecoder
+	err  error
 	r    *CommandReader
 	b    []byte
 	a    [128]byte
@@ -178,8 +202,6 @@ func (args *cmdArgsReader) Len() int {
 }
 
 func (args *cmdArgsReader) Next(val interface{}) bool {
-	args.b = args.b[:0]
-
 	if args.err != nil {
 		return false
 	}
@@ -191,6 +213,8 @@ func (args *cmdArgsReader) Next(val interface{}) bool {
 		}
 	}
 
+	args.b = args.b[:0]
+
 	if err := args.dec.Decode(&args.b); err != nil {
 		args.err = args.dec.Err()
 		return false
@@ -201,6 +225,8 @@ func (args *cmdArgsReader) Next(val interface{}) bool {
 			args.err = err
 			return false
 		}
+
+		args.cmd.appendArg(args.b[:])
 	}
 
 	return true
@@ -240,6 +266,7 @@ func (args *cmdArgsReader) parseBool(v reflect.Value) error {
 	if err != nil {
 		return err
 	}
+
 	v.SetBool(i != 0)
 	return nil
 }
@@ -249,6 +276,7 @@ func (args *cmdArgsReader) parseInt(v reflect.Value) error {
 	if err != nil {
 		return err
 	}
+
 	v.SetInt(i)
 	return nil
 }
@@ -258,6 +286,7 @@ func (args *cmdArgsReader) parseUint(v reflect.Value) error {
 	if err != nil {
 		return err
 	}
+
 	v.SetUint(u)
 	return nil
 }
@@ -267,6 +296,7 @@ func (args *cmdArgsReader) parseFloat(v reflect.Value) error {
 	if err != nil {
 		return err
 	}
+
 	v.SetFloat(f)
 	return nil
 }

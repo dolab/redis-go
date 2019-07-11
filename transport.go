@@ -190,6 +190,7 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 		laddr := conn.LocalAddr()
 		raddr := conn.RemoteAddr()
 		conn.Close()
+
 		err = &net.OpError{Op: "request", Net: "redis", Source: laddr, Addr: raddr, Err: err}
 	}
 
@@ -229,15 +230,12 @@ func (t *Transport) readTransactionResponse(conn *Conn, req *Request) *Response 
 			},
 			TxArgs: args,
 		},
-		Request: req,
+		request: req,
 	}
 }
 
 func (t *Transport) readSimpleResponse(conn *Conn, req *Request) *Response {
 	args := conn.ReadArgs()
-
-	// waits for the first bytes of the response to arrive
-	args.Len()
 
 	return &Response{
 		Args: &transportArgs{
@@ -248,7 +246,8 @@ func (t *Transport) readSimpleResponse(conn *Conn, req *Request) *Response {
 			},
 			Args: args,
 		},
-		Request: req,
+		respErr: args.(*connArgs).isRespErr,
+		request: req,
 	}
 }
 

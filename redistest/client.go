@@ -3,15 +3,12 @@ package redistest
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"k8s.io/apimachinery/pkg/util/wait"
 
 	redis "github.com/dolab/redis-go"
 )
@@ -289,96 +286,4 @@ func ReadTestPattern(client *redis.Client, total int, templ string, sleep int, t
 	}
 
 	return numHits, numMisses, numErrors, nil
-}
-
-func TestServer(serverList redis.ServerList, handlers ...func(w redis.ResponseWriter, r *redis.Request)) <-chan struct{} {
-	allServers := map[string]bool{}
-	for _, endpoint := range serverList {
-		allServers[endpoint.Addr] = true
-
-		go func(addr string) {
-			// log.Println("Starting server ", addr)
-
-			handler := TestServerHandler()
-			if len(handlers) > 0 {
-				handler = handlers[0]
-			}
-
-			log.Fatal(redis.ListenAndServe(addr, handler))
-		}(endpoint.Addr)
-	}
-
-	stopCh := make(chan struct{})
-	wait.Until(func() {
-		if len(allServers) == 0 {
-			close(stopCh)
-		}
-
-		for addr := range allServers {
-			client := redis.Client{
-				Addr:    addr,
-				Timeout: 10 * time.Millisecond,
-			}
-
-			err := client.Exec(context.Background(), "PING")
-			if err == nil {
-				delete(allServers, addr)
-			}
-		}
-	}, time.Millisecond, stopCh)
-
-	return stopCh
-}
-
-func TestServerHandler() redis.HandlerFunc {
-	localStore := sync.Map{}
-
-	return func(w redis.ResponseWriter, r *redis.Request) {
-		for _, cmd := range r.Cmds {
-			switch cmd.Cmd {
-			case "PING":
-				w.Write("OK")
-
-			case "SET":
-				var (
-					dst string
-
-					args []string
-				)
-				for cmd.Args.Next(&dst) {
-					args = append(args, dst)
-				}
-
-				if len(args) > 0 {
-					if len(args) > 1 {
-						localStore.Store(args[0], args[1:])
-					} else {
-						localStore.Store(args[0], nil)
-					}
-				}
-
-				w.Write("")
-
-			case "GET":
-				w.WriteStream(cmd.Args.Len())
-
-				var (
-					dst string
-				)
-				for cmd.Args.Next(&dst) {
-					v, ok := localStore.Load(dst)
-					if !ok {
-						w.Write("")
-					} else {
-						vals, ok := v.([]string)
-						if ok {
-							w.Write(strings.Join(vals, " "))
-						} else {
-							w.Write(fmt.Sprintf("%v", v))
-						}
-					}
-				}
-			}
-		}
-	}
 }

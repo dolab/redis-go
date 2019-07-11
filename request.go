@@ -30,7 +30,7 @@ type Request struct {
 func NewRequest(addr string, cmd string, args Args) *Request {
 	return &Request{
 		Addr: addr,
-		Cmds: []Command{{cmd, args}},
+		Cmds: []Command{{Cmd: cmd, Args: args}},
 	}
 }
 
@@ -53,4 +53,21 @@ func (req *Request) Close() error {
 // transaction, false otherwise.
 func (req *Request) IsTransaction() bool {
 	return len(req.Cmds) == 0 || req.Cmds[0].Cmd == "MULTI"
+}
+
+// newRequest returns a request for reuse, see Response.Retry() for details.
+//
+// NOTE: It CANNOT be exported cause it should ensure the command is idempotent, see Response.Retry() for details!
+func (req *Request) newRequest() (reqn *Request, err error) {
+	reqn = &Request{
+		Addr:    "",
+		Cmds:    make([]Command, len(req.Cmds)),
+		Context: req.Context,
+	}
+
+	for i := 0; i < len(req.Cmds); i++ {
+		reqn.Cmds[i] = req.Cmds[i].newCommand()
+	}
+
+	return
 }
