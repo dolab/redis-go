@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/segmentio/objconv"
-	"github.com/segmentio/objconv/resp"
+	"github.com/dolab/objconv"
+	"github.com/dolab/objconv/resp"
 )
 
 // SubConn represents a redis connection that has been switched to PUB/SUB mode.

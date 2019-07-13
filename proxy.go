@@ -9,7 +9,7 @@ import (
 	"log"
 	"net"
 
-	"github.com/segmentio/objconv/resp"
+	"github.com/dolab/objconv/resp"
 )
 
 // ReverseProxy is the implementation of a redis reverse proxy.
@@ -81,9 +81,9 @@ func (proxy *ReverseProxy) serveRequest(w ResponseWriter, req *Request) {
 	}
 
 	if res.Args != nil {
-		err = proxy.writeArgs(w, res.Args)
+		err = proxy.writeArgs(w, res)
 	} else {
-		err = proxy.writeTxArgs(w, res.TxArgs)
+		err = proxy.writeTxArgs(w, res)
 	}
 
 	if err != nil {
@@ -93,11 +93,14 @@ func (proxy *ReverseProxy) serveRequest(w ResponseWriter, req *Request) {
 	}
 }
 
-func (proxy *ReverseProxy) writeTxArgs(w ResponseWriter, tx TxArgs) (err error) {
-	w.WriteStream(tx.Len())
+func (proxy *ReverseProxy) writeTxArgs(w ResponseWriter, res *Response) (err error) {
+	if res.IsRespArray() {
+		w.WriteStream(res.TxArgs.Len())
+	}
+
 	var v []interface{} // TODO: figure out a way to avoid loading values in memory
 
-	for a := tx.Next(); a != nil; a = tx.Next() {
+	for a := res.TxArgs.Next(); a != nil; a = res.TxArgs.Next() {
 		n := 0
 		v = append(v, nil)
 
@@ -116,25 +119,25 @@ func (proxy *ReverseProxy) writeTxArgs(w ResponseWriter, tx TxArgs) (err error) 
 		w.Write(v[:n])
 	}
 
-	if e := tx.Close(); e != nil && err == nil {
+	if e := res.TxArgs.Close(); e != nil && err == nil {
 		err = e
 	}
 
 	return
 }
 
-func (proxy *ReverseProxy) writeArgs(w ResponseWriter, a Args) (err error) {
-	if a.Len() > 1 {
-		w.WriteStream(a.Len())
+func (proxy *ReverseProxy) writeArgs(w ResponseWriter, res *Response) (err error) {
+	if res.IsRespArray() {
+		w.WriteStream(res.Args.Len())
 	}
 
 	var v interface{}
-	for a.Next(&v) {
+	for res.Args.Next(&v) {
 		w.Write(v)
 		v = nil
 	}
 
-	err = a.Close()
+	err = res.Args.Close()
 
 	if e, ok := err.(*resp.Error); ok {
 		w.Write(e)

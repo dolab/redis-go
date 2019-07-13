@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/segmentio/objconv/resp"
+	"github.com/dolab/objconv/resp"
 
 	redis "github.com/dolab/redis-go"
 )

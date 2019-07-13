@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dolab/objconv/resp"
 	"github.com/golib/assert"
 	fuzz "github.com/google/gofuzz"
 	"github.com/google/uuid"
-	"github.com/segmentio/objconv/resp"
 
 	"github.com/dolab/redis-go"
 	"github.com/dolab/redis-go/redistest"

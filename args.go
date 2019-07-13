@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/segmentio/objconv"
-	"github.com/segmentio/objconv/objutil"
-	"github.com/segmentio/objconv/resp"
+	"github.com/dolab/objconv"
+	"github.com/dolab/objconv/objutil"
+	"github.com/dolab/objconv/resp"
 )
 
 // Args represents a list of arguments in Redis requests and responses.

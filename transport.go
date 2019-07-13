@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/segmentio/objconv/resp"
+	"github.com/dolab/objconv/resp"
 )
 
 // RoundTripper is an interface representing the ability to execute a single
@@ -246,7 +246,7 @@ func (t *Transport) readSimpleResponse(conn *Conn, req *Request) *Response {
 			},
 			Args: args,
 		},
-		respErr: args.(*connArgs).isRespErr,
+		respTyp: args.(*connArgs).respTyp,
 		request: req,
 	}
 }

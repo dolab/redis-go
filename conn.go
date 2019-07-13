@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/segmentio/objconv"
-	"github.com/segmentio/objconv/resp"
+	"github.com/dolab/objconv"
+	"github.com/dolab/objconv/resp"
 )
 
 var (
@@ -222,16 +222,8 @@ func (c *Conn) ReadArgs() Args {
 	// waits for the first bytes of the response to arrive
 	args.Len()
 
-	// convert RESP error to golang error
-	typ, err := args.dec.Parser.ParseType()
-	if err == nil {
-		if typ == objconv.Error {
-			// args.dec.Decode(&args.respErr)
-			args.isRespErr = true
-		}
-	} else {
-		args.respErr = resp.NewError(err.Error())
-	}
+	// RESP message type
+	args.respTyp = args.dec.RootType()
 
 	return args
 }
@@ -552,12 +544,12 @@ func (c *Conn) setWriteTimeout(timeout time.Duration) {
 }
 
 type connArgs struct {
-	mutex     sync.Mutex
-	conn      *Conn
-	dec       objconv.StreamDecoder
-	tx        *txArgs
-	respErr   *resp.Error
-	isRespErr bool
+	mutex   sync.Mutex
+	conn    *Conn
+	dec     objconv.StreamDecoder
+	tx      *txArgs
+	respTyp objconv.Type
+	respErr *resp.Error
 }
 
 func (args *connArgs) Close() error {
