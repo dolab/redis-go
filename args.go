@@ -85,13 +85,14 @@ func MultiArgs(args ...Args) Args {
 
 type multiArgs struct {
 	args []Args
+	argn int
 	err  error
 }
 
 func (m *multiArgs) Close() (err error) {
-	for _, a := range m.args {
-		if e := a.Close(); e != nil && err == nil {
-			err = e
+	for _, arg := range m.args {
+		if cerr := arg.Close(); cerr != nil && err == nil {
+			err = cerr
 		}
 	}
 
@@ -112,16 +113,19 @@ func (m *multiArgs) Len() (n int) {
 }
 
 func (m *multiArgs) Next(dst interface{}) bool {
-	if len(m.args) == 0 || m.err != nil {
+	if m.argn >= len(m.args) || m.err != nil {
 		return false
 	}
 
-	for !m.args[0].Next(dst) {
-		if err := m.args[0].Close(); err != nil {
+	for !m.args[m.argn].Next(dst) {
+		if err := m.args[m.argn].Close(); err != nil {
 			m.err = err
 			return false
 		}
-		if m.args = m.args[1:]; len(m.args) == 0 {
+
+		m.argn++
+
+		if m.argn >= len(m.args) {
 			return false
 		}
 	}
@@ -317,6 +321,10 @@ func (args *byteArgs) Next(dst interface{}) (ok bool) {
 }
 
 func (args *byteArgs) next(v reflect.Value, a []byte) error {
+	for v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
 	switch v.Kind() {
 	case reflect.Bool:
 		return args.parseBool(v, a)

@@ -19,11 +19,11 @@ func TestReverseProxy(t *testing.T) {
 	redistest.TestClient(t, func() (redistest.Client, func(), error) {
 		transport := &redis.Transport{}
 
-		validServers, _, _ := makeServerList()
+		validServers, _, _ := redistest.FakeServerList()
 
 		<-redistest.TestServer(validServers)
 
-		_, serverAddr := newServer(&redis.ReverseProxy{
+		_, serverAddr := redistest.FakeServer(&redis.ReverseProxy{
 			Transport: transport,
 			Registry:  validServers,
 			ErrorLog:  log.New(os.Stderr, "[Proxy] ==> ", 0),
@@ -41,7 +41,7 @@ func TestReverseProxyHash(t *testing.T) {
 	it := assert.New(t)
 	transport := &redis.Transport{}
 
-	validServers, brokenServers, oneDownServers := makeServerList()
+	validServers, brokenServers, oneDownServers := redistest.FakeServerList()
 
 	<-redistest.TestServer(validServers)
 
@@ -51,7 +51,7 @@ func TestReverseProxyHash(t *testing.T) {
 		ErrorLog:  log.New(os.Stderr, "[Proxy Hash]", 0),
 	}
 
-	_, serverAddr := newServerTimeout(proxy, 1000*time.Millisecond)
+	_, serverAddr := redistest.FakeTimeoutServer(proxy, 1000*time.Millisecond)
 	client := &redis.Client{
 		Addr:      serverAddr,
 		Transport: transport,
@@ -62,7 +62,7 @@ func TestReverseProxyHash(t *testing.T) {
 		max     = 160
 		templ   = "redis-go.hash." + uuid.New().String() + ".%d"
 		sleep   = 100             // millisecond
-		timeout = 1 * time.Second // client timeout
+		timeout = 3 * time.Second // client timeout
 
 		numHits, numMisses, numSuccess, numFailure, numErrs int
 		err                                                 error
@@ -129,7 +129,7 @@ func TestReverseProxyHash(t *testing.T) {
 func TestReverseProxy_ServeRedisWithOneshot(t *testing.T) {
 	it := assert.New(t)
 
-	validServers, _, _ := makeServerList()
+	validServers, _, _ := redistest.FakeServerList()
 	<-redistest.TestServer(validServers)
 
 	proxy := &redis.ReverseProxy{
@@ -150,7 +150,7 @@ func TestReverseProxy_ServeRedisWithOneshot(t *testing.T) {
 }
 
 func BenchmarkReverseProxy_ServeRedis(b *testing.B) {
-	validServers, _, _ := makeServerList()
+	validServers, _, _ := redistest.FakeServerList()
 
 	<-redistest.TestServer(validServers)
 

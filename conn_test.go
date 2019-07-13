@@ -298,9 +298,9 @@ func testConnWriteCommandsAfterClose(t *testing.T, c *redis.Conn) {
 	c.Close()
 
 	err := c.WriteCommands(
-		redis.Command{"SET", redis.List("key-A", "value-1")},
-		redis.Command{"SET", redis.List("key-B", "value-2")},
-		redis.Command{"SET", redis.List("key-C", "value-3")},
+		redis.Command{Cmd: "SET", Args: redis.List("key-A", "value-1")},
+		redis.Command{Cmd: "SET", Args: redis.List("key-B", "value-2")},
+		redis.Command{Cmd: "SET", Args: redis.List("key-C", "value-3")},
 	)
 
 	if err == nil {

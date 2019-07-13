@@ -197,8 +197,8 @@ func (c *Conn) ReadCommands() *CommandReader {
 	c.resetDecoder()
 
 	return &CommandReader{
-		conn:    c,
-		decoder: c.decoder,
+		conn: c,
+		dec:  c.decoder,
 	}
 }
 
@@ -214,10 +214,26 @@ func (c *Conn) ReadArgs() Args {
 
 	c.resetDecoder()
 
-	return &connArgs{
-		conn:    c,
-		decoder: c.decoder,
+	args := &connArgs{
+		conn: c,
+		dec:  c.decoder,
 	}
+
+	// waits for the first bytes of the response to arrive
+	args.Len()
+
+	// convert RESP error to golang error
+	typ, err := args.dec.Parser.ParseType()
+	if err == nil {
+		if typ == objconv.Error {
+			// args.dec.Decode(&args.respErr)
+			args.isRespErr = true
+		}
+	} else {
+		args.respErr = resp.NewError(err.Error())
+	}
+
+	return args
 }
 
 // ReadTxArgs opens a stream to read the arguments in response to opening a
@@ -263,7 +279,7 @@ func (c *Conn) ReadTxArgs(n int) TxArgs {
 }
 
 func (c *Conn) readMultiArgs(tx *txArgs) (err error) {
-	status, error, err := c.readTxStatus()
+	status, rerr, err := c.readTxStatus()
 
 	// The redis protocol says that MULTI only returns OK, but here we've
 	// got a protocol error, it's safer to just close the connection in those
@@ -271,8 +287,8 @@ func (c *Conn) readMultiArgs(tx *txArgs) (err error) {
 	switch {
 	case err != nil:
 
-	case error != nil:
-		err = fmt.Errorf("opening a transaction to the redis server failed: %s", error)
+	case rerr != nil:
+		err = fmt.Errorf("opening a transaction to the redis server failed: %s", rerr)
 
 	case status != "OK":
 		err = fmt.Errorf("opening a transaction to the redis server failed: %s", status)
@@ -283,7 +299,7 @@ func (c *Conn) readMultiArgs(tx *txArgs) (err error) {
 
 func (c *Conn) readTxExecArgs(tx *txArgs, n int) error {
 	var decoder = objconv.StreamDecoder{Parser: c.decoder.Parser}
-	var error *resp.Error
+	var rerr *resp.Error
 	var status string
 
 	t, err := decoder.Parser.ParseType()
@@ -298,35 +314,35 @@ func (c *Conn) readTxExecArgs(tx *txArgs, n int) error {
 		}
 
 	case objconv.Error:
-		if err := decoder.Decode(&error); err != nil {
+		if err := decoder.Decode(&rerr); err != nil {
 			return err
 		}
-		if error.Type() == "EXECABORT" {
-			error = ErrDiscard
+		if rerr.Type() == "EXECABORT" {
+			rerr = ErrDiscard
 		}
 
 	case objconv.String:
 		if err := decoder.Decode(&status); err != nil {
 			return err
 		}
-		if status != "OK" { // OK is returned when a transcation is discarded
+		if status != "OK" { // OK is returned when a transaction is discarded
 			return fmt.Errorf("unsupported transaction status received: %s", status)
 		}
-		error = ErrDiscard
+		rerr = ErrDiscard
 
 	default:
 		return fmt.Errorf("unsupported value of type %s returned while reading the status of a redis transaction", t)
 	}
 
-	if error != nil {
+	if rerr != nil {
 		for i := range tx.args {
 			a := tx.args[i].(*connArgs)
 			a.conn = nil
 			if a.respErr == nil {
-				a.respErr = error
+				a.respErr = rerr
 			}
 		}
-		tx.err = error
+		tx.err = rerr
 	}
 
 	return nil
@@ -342,7 +358,7 @@ func (c *Conn) readTxArgs(tx *txArgs, i int, n int) (int, error) {
 		tx.args[i] = &connArgs{tx: tx, respErr: rerr}
 
 	case status == "QUEUED":
-		tx.args[i] = &connArgs{conn: c, tx: tx, decoder: c.decoder}
+		tx.args[i] = &connArgs{conn: c, tx: tx, dec: c.decoder}
 		n++
 
 	default:
@@ -536,11 +552,12 @@ func (c *Conn) setWriteTimeout(timeout time.Duration) {
 }
 
 type connArgs struct {
-	mutex   sync.Mutex
-	decoder objconv.StreamDecoder
-	conn    *Conn
-	tx      *txArgs
-	respErr *resp.Error
+	mutex     sync.Mutex
+	conn      *Conn
+	dec       objconv.StreamDecoder
+	tx        *txArgs
+	respErr   *resp.Error
+	isRespErr bool
 }
 
 func (args *connArgs) Close() error {
@@ -554,7 +571,7 @@ func (args *connArgs) Close() error {
 			// connection in a stable state
 		}
 
-		err = args.decoder.Err()
+		err = args.dec.Err()
 	}
 
 	if err == nil && args.respErr != nil {
@@ -585,7 +602,7 @@ func (args *connArgs) Close() error {
 func (args *connArgs) Len() (n int) {
 	args.mutex.Lock()
 	if args.conn != nil {
-		n = args.decoder.Len()
+		n = args.dec.Len()
 	}
 	args.mutex.Unlock()
 	return
@@ -608,16 +625,16 @@ func (args *connArgs) Next(dst interface{}) bool {
 func (args *connArgs) next(dst interface{}) (err error) {
 	var typ objconv.Type
 
-	if args.decoder.Len() == 0 {
+	if args.dec.Len() == 0 {
 		err = objconv.End
 		return
 	}
 
-	if typ, err = args.decoder.Parser.ParseType(); err == nil {
+	if typ, err = args.dec.Parser.ParseType(); err == nil {
 		if typ != objconv.Error {
-			err = args.decoder.Decode(dst)
+			err = args.dec.Decode(dst)
 		} else {
-			args.decoder.Decode(&args.respErr)
+			args.dec.Decode(&args.respErr)
 			err = args.respErr
 		}
 	}
