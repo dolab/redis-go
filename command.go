@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/segmentio/objconv"
-	"github.com/segmentio/objconv/objutil"
+	"github.com/dolab/objconv"
+	"github.com/dolab/objconv/objutil"
 )
 
 // A Command represent a Redis command used withing a Request.

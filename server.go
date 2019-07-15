@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/segmentio/objconv"
-	"github.com/segmentio/objconv/resp"
+	"github.com/dolab/objconv"
+	"github.com/dolab/objconv/resp"
 )
 
 // A ResponseWriter interface is used by a Redis handler to construct an Redis

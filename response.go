@@ -2,6 +2,8 @@ package redis
 
 import (
 	"strings"
+
+	"github.com/dolab/objconv"
 )
 
 // Response represents the response from a Redis request.
@@ -21,19 +23,39 @@ type Response struct {
 	request *Request
 
 	// whether redis response with an error message, RESP defines prefix with `-`.
-	respErr bool
+	respTyp objconv.Type
 }
 
 // IsRespError returns true if redis response with an error message. You can get error by calling
 // response.Close() or build a new request by calling response.Retry() for retrying.
 func (resp *Response) IsRespError() bool {
-	return resp.respErr
+	return resp.respTyp == objconv.Error
+}
+
+func (resp *Response) IsRespArray() bool {
+	if resp.IsRespError() {
+		return false
+	}
+
+	if resp.respTyp == objconv.Array {
+		return true
+	}
+
+	if resp.Args != nil {
+		return resp.Args.Len() > 1
+	}
+
+	if resp.TxArgs != nil {
+		return resp.TxArgs.Len() > 1
+	}
+
+	return false
 }
 
 // retry returns a new *Request if the response is retryable and nil. Otherwise, it returns an error
 // indicates the request CANNOT apply retry.
 func (resp *Response) Retry() (req *Request, err error) {
-	if !resp.respErr {
+	if !resp.IsRespError() {
 		err = ErrNotRetryable
 		return
 	}
