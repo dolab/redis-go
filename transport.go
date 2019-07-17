@@ -12,6 +12,24 @@ import (
 	"github.com/dolab/objconv/resp"
 )
 
+var (
+	// DefaultTransport is the default implementation of Transport and is used by
+	// DefaultClient. It establishes network connections as needed and caches them
+	// for reuse by subsequent calls.
+	DefaultTransport RoundTripper = &Transport{
+		PingTimeout:  10 * time.Second,
+		PingInterval: 15 * time.Second,
+	}
+
+	// DefaultDialer is the default dialer used by Transports when no DialContext
+	// is set.
+	DefaultDialer = &net.Dialer{
+		Timeout:       10 * time.Second,
+		KeepAlive:     30 * time.Second,
+		FallbackDelay: 100 * time.Millisecond,
+	}
+)
+
 // RoundTripper is an interface representing the ability to execute a single
 // Redis transaction, obtaining the Response for a given Request.
 //
@@ -199,6 +217,7 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 
 func (t *Transport) writeRequest(conn *Conn, req *Request, errch chan<- error) {
 	err := conn.WriteCommands(req.Cmds...)
+
 	req.Close()
 
 	if err != nil {
@@ -303,22 +322,6 @@ func (t *Transport) pingInterval() time.Duration {
 	return 30 * time.Second
 }
 
-// DefaultTransport is the default implementation of Transport and is used by
-// DefaultClient. It establishes network connections as needed and caches them
-// for reuse by subsequent calls.
-var DefaultTransport RoundTripper = &Transport{
-	PingTimeout:  10 * time.Second,
-	PingInterval: 15 * time.Second,
-}
-
-// DefaultDialer is the default dialer used by Transports when no DialContext
-// is set.
-var DefaultDialer = &net.Dialer{
-	Timeout:       10 * time.Second,
-	KeepAlive:     30 * time.Second,
-	FallbackDelay: 100 * time.Millisecond,
-}
-
 type connPoolPutter struct {
 	host string
 	conn *Conn
@@ -347,8 +350,10 @@ type transportArgs struct {
 	Args
 }
 
-func (a *transportArgs) Close() error {
-	return a.connPoolPutter.close(a.Args.Close())
+func (ta *transportArgs) Close() error {
+	err := ta.Args.Close()
+
+	return ta.connPoolPutter.close(err)
 }
 
 type transportTxArgs struct {
@@ -356,8 +361,10 @@ type transportTxArgs struct {
 	TxArgs
 }
 
-func (a *transportTxArgs) Close() error {
-	return a.connPoolPutter.close(a.TxArgs.Close())
+func (ta *transportTxArgs) Close() error {
+	err := ta.TxArgs.Close()
+
+	return ta.connPoolPutter.close(err)
 }
 
 func splitNetworkAddress(s string) (string, string) {

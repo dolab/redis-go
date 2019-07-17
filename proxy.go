@@ -180,6 +180,7 @@ func (proxy *ReverseProxy) roundTrip(req *Request) (*Response, error) {
 	if t == nil {
 		t = DefaultTransport
 	}
+
 	return t.RoundTrip(req)
 }
 

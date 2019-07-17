@@ -57,7 +57,7 @@ func TestServer(serverList redis.ServerList, handlers ...func(w redis.ResponseWr
 				delete(allServers, addr)
 			}
 		}
-	}, time.Millisecond, stopCh)
+	}, 10*time.Millisecond, stopCh)
 
 	return stopCh
 }
@@ -130,7 +130,7 @@ func FakeTimeoutServer(handler redis.Handler, timeout time.Duration) (serv *redi
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 5 * time.Second,
 		IdleTimeout:  timeout,
-		ErrorLog:     log.New(os.Stderr, "[Server]", 0),
+		ErrorLog:     log.New(os.Stderr, "[Server]", os.O_CREATE|os.O_WRONLY|os.O_APPEND),
 	}
 
 	go func() {
