@@ -44,6 +44,53 @@ func (cmd *Command) newCommand() Command {
 	}
 }
 
+// pipeCommand tries to return a new Command for pipeline, or an ErrNotPipeline indicate no pipeline.
+func (cmd *Command) pipeCommand() (pipe Command, err error) {
+	// shortcut for ping cmd
+	if cmd.Cmd == "PING" {
+		err = ErrNotPipeline
+		return
+	}
+
+	err = cmd.Args.Close()
+	if err != nil {
+		return
+	}
+
+	switch cmd.Args.(type) {
+	case *cmdArgsReader:
+		cmdArgs := cmd.Args.(*cmdArgsReader)
+		if !cmdArgs.nextCommand(&pipe) {
+			err = ErrNotPipeline
+		}
+
+	case *multiArgs:
+		// TODO: How to handler multi args correct?
+		listArgs := cmd.Args.(*multiArgs)
+
+		var (
+			cmdArgs *cmdArgsReader
+			ok      bool
+		)
+		for _, args := range listArgs.args {
+			cmdArgs, ok = args.(*cmdArgsReader)
+			if ok {
+				break
+			}
+		}
+
+		if cmdArgs == nil {
+			err = ErrNotPipeline
+		} else {
+			if !cmdArgs.nextCommand(&pipe) {
+				err = ErrNotPipeline
+			}
+		}
+	}
+
+	return
+}
+
 func (cmd *Command) getKeys(keys []string) []string {
 	lastIndex := len(keys)
 	keys = append(keys, "")
@@ -62,18 +109,20 @@ func (cmd *Command) getKeys(keys []string) []string {
 
 func (cmd *Command) loadByteArgs() {
 	if cmd.Args != nil {
-		var argList [][]byte
-		var arg []byte
+		var (
+			list [][]byte
+			arg  []byte
+		)
 
 		for cmd.Args.Next(&arg) {
-			argList = append(argList, arg)
+			list = append(list, arg)
 			arg = nil
 		}
 
 		if err := cmd.Args.Close(); err != nil {
 			cmd.Args = newArgsError(err)
 		} else {
-			cmd.Args = &byteArgs{args: argList}
+			cmd.Args = &byteArgs{args: list}
 		}
 	}
 }
@@ -148,16 +197,22 @@ func (r *CommandReader) Read(cmd *Command) bool {
 	}
 
 	cmd.args = make([][]byte, r.dec.Len())
-	cmd.Args = newCmdArgsReader(r.dec, r, cmd)
+	cmd.Args = newCmdArgsReader(r, cmd)
 	return true
+}
+
+func (r *CommandReader) resetReader(cmd *Command) bool {
+	r.done = false
+
+	return r.Read(cmd)
 }
 
 func (r *CommandReader) resetDecoder() {
 	r.dec = objconv.StreamDecoder{Parser: r.dec.Parser}
 }
 
-func newCmdArgsReader(d objconv.StreamDecoder, r *CommandReader, cmd *Command) *cmdArgsReader {
-	args := &cmdArgsReader{cmd: cmd, dec: d, r: r}
+func newCmdArgsReader(r *CommandReader, cmd *Command) *cmdArgsReader {
+	args := &cmdArgsReader{r: r, cmd: cmd}
 	args.b = args.a[:0]
 	return args
 }
@@ -165,7 +220,6 @@ func newCmdArgsReader(d objconv.StreamDecoder, r *CommandReader, cmd *Command) *
 type cmdArgsReader struct {
 	once sync.Once
 	cmd  *Command
-	dec  objconv.StreamDecoder
 	err  error
 	r    *CommandReader
 	b    []byte
@@ -176,11 +230,12 @@ func (args *cmdArgsReader) Close() error {
 	args.once.Do(func() {
 		var err error
 
-		for args.dec.Decode(nil) == nil {
+		for args.r.dec.Decode(nil) == nil {
 			// discard all remaining values
 		}
 
-		if err = args.dec.Err(); args.err == nil {
+		err = args.r.dec.Err()
+		if args.err == nil {
 			args.err = err
 		}
 
@@ -191,6 +246,7 @@ func (args *cmdArgsReader) Close() error {
 			args.r.mutex.Unlock()
 		}
 	})
+
 	return args.err
 }
 
@@ -198,7 +254,8 @@ func (args *cmdArgsReader) Len() int {
 	if args.err != nil {
 		return 0
 	}
-	return args.dec.Len()
+
+	return args.r.dec.Len()
 }
 
 func (args *cmdArgsReader) Next(val interface{}) bool {
@@ -206,17 +263,18 @@ func (args *cmdArgsReader) Next(val interface{}) bool {
 		return false
 	}
 
-	if args.dec.Len() != 0 {
-		if t, _ := args.dec.Parser.ParseType(); t == objconv.Error {
-			args.dec.Decode(&args.err)
+	if args.r.dec.Len() != 0 {
+		t, _ := args.r.dec.Parser.ParseType()
+		if t == objconv.Error {
+			args.r.dec.Decode(&args.err)
 			return false
 		}
 	}
 
 	args.b = args.b[:0]
 
-	if err := args.dec.Decode(&args.b); err != nil {
-		args.err = args.dec.Err()
+	if err := args.r.dec.Decode(&args.b); err != nil {
+		args.err = args.r.dec.Err()
 		return false
 	}
 
@@ -230,6 +288,10 @@ func (args *cmdArgsReader) Next(val interface{}) bool {
 	}
 
 	return true
+}
+
+func (args *cmdArgsReader) nextCommand(cmd *Command) bool {
+	return args.r.resetReader(cmd)
 }
 
 func (args *cmdArgsReader) parse(v reflect.Value) error {

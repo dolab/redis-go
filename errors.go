@@ -15,4 +15,5 @@ var (
 	ErrHijacked                      = errors.New("invalid use of a hijacked redis.ResponseWriter")
 	ErrNotHijackable                 = errors.New("the response writer is not hijackable")
 	ErrNotRetryable                  = errors.New("the request cannot retry")
+	ErrNotPipeline                   = errors.New("redis: not pipeline")
 )

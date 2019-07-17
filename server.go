@@ -273,12 +273,15 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 			return
 		}
 
+		// for transaction
 		if cmds[0].Cmd == "MULTI" {
 			// Transactions have to be loaded in memory because the server has to
 			// interleave responses between each command it receives.
 			for {
 				lastIndex := len(cmds)
-				cmds[lastIndex].loadByteArgs()
+				if lastIndex > 0 {
+					cmds[lastIndex-1].loadByteArgs()
+				}
 
 				if lastIndex == 0 {
 					c.WriteArgs(List("OK")) // response to MULTI
@@ -324,19 +327,19 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 
 func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serverConfig) (err error) {
 	var (
-		remoteHost = addr
 		names      = make([]string, len(cmds))
+		remoteAddr = addr
 		issuedAt   = time.Now()
 	)
 	if n := strings.IndexByte(addr, ':'); n > 0 {
-		remoteHost = addr[:n]
+		remoteAddr = addr[:n]
 	}
 	for i, cmd := range cmds {
 		names[i] = cmd.Cmd
 	}
 
-	gometrics.IncRequest(remoteHost)
-	gometrics.IncCommands(remoteHost, names)
+	gometrics.IncRequest(remoteAddr)
+	gometrics.IncCommands(remoteAddr, names)
 
 	ctx, cancel := context.WithTimeout(context.Background(), config.readTimeout)
 
@@ -353,22 +356,58 @@ func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serv
 
 	err = s.serveRequest(res, req)
 
-	req.Close()
+	// is this a pipeline?
+	reqErr := req.Close()
+	if err == nil && reqErr == nil {
+		pipeErr := s.servePipeline(c, addr, cmds, config)
+		if pipeErr != ErrNotPipeline {
+			err = pipeErr
+		}
+	}
+
+	// cancel context
 	cancel()
 
-	gometrics.ObserveRequest(remoteHost, issuedAt)
-	gometrics.DecRequest(remoteHost)
-	gometrics.DecCommands(remoteHost, names)
+	gometrics.ObserveRequest(remoteAddr, issuedAt)
+	gometrics.DecRequest(remoteAddr)
+	gometrics.DecCommands(remoteAddr, names)
 	if err != nil {
-		gometrics.IncErrors(remoteHost, names)
+		gometrics.IncErrors(remoteAddr, names)
 	}
 	return
 }
 
+func (s *Server) servePipeline(c *Conn, addr string, cmds []Command, config serverConfig) (err error) {
+	var (
+		pipeCmds []Command
+	)
+	for _, cmd := range cmds {
+		pipeCmd, pipeErr := cmd.pipeCommand()
+		if pipeErr != nil {
+			err = pipeErr
+			break
+		}
+
+		pipeCmds = append(pipeCmds, pipeCmd)
+	}
+
+	if err != nil {
+		return
+	}
+
+	if len(pipeCmds) > 0 {
+		err = s.serveCommands(c, addr, pipeCmds, config)
+	}
+
+	return
+}
+
 func (s *Server) serveRequest(res *responseWriter, req *Request) (err error) {
-	var preparedRes *preparedResponseWriter
 	var w ResponseWriter = res
-	var i int
+	var (
+		preparedRes *preparedResponseWriter
+		i           int
+	)
 
 	addPreparedResponse := func(i int, v interface{}) {
 		if preparedRes == nil {
@@ -426,13 +465,15 @@ func (s *Server) serveRedis(res ResponseWriter, req *Request) (err error) {
 }
 
 func (s *Server) log(err error) {
-	if err != ErrHijacked {
-		lprint := log.Print
-		if s.ErrorLog != nil {
-			lprint = s.ErrorLog.Print
-		}
-		lprint(err)
+	if err == ErrHijacked || err == ErrNotPipeline {
+		return
 	}
+
+	printle := log.Print
+	if s.ErrorLog != nil {
+		printle = s.ErrorLog.Print
+	}
+	printle(err)
 }
 
 func (s *Server) trackListener(l net.Listener) {
@@ -642,9 +683,9 @@ func (res *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nc, rw, nil
 }
 
+// TODO: figure out here how to wait for the previous response to flush to
+// support pipeline.
 func (res *responseWriter) waitReadyWrite() {
-	// TODO: figure out here how to wait for the previous response to flush to
-	// support pipelining.
 	if res.timeout != 0 {
 		res.conn.setWriteTimeout(res.timeout)
 	}
