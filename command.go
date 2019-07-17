@@ -44,7 +44,7 @@ func (cmd *Command) newCommand() Command {
 	}
 }
 
-// pipeCommand tries to return a new Command for pipeline, or an ErrNotPipeline indicate no pipeline.
+// pipeCommand returns a new Command for for pipeline, or an error of ErrNotPipeline indicates no pipeline.
 func (cmd *Command) pipeCommand() (pipe Command, err error) {
 	// shortcut for ping cmd
 	if cmd.Cmd == "PING" {

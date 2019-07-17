@@ -34,7 +34,7 @@ func TestServer(serverList redis.ServerList, handlers ...func(w redis.ResponseWr
 				ReadTimeout:  1 * time.Minute,
 				WriteTimeout: 1 * time.Minute,
 				IdleTimeout:  5 * time.Minute,
-				ErrorLog:     log.New(os.Stdout, "backend server ->", 0),
+				ErrorLog:     log.New(os.Stdout, "[Test Backend Server] ", os.O_CREATE|os.O_WRONLY|os.O_APPEND),
 			}
 			log.Fatal(server.ListenAndServe())
 		}(endpoint.Addr, handler)
@@ -130,7 +130,7 @@ func FakeTimeoutServer(handler redis.Handler, timeout time.Duration) (serv *redi
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 5 * time.Second,
 		IdleTimeout:  timeout,
-		ErrorLog:     log.New(os.Stderr, "[Server]", os.O_CREATE|os.O_WRONLY|os.O_APPEND),
+		ErrorLog:     log.New(os.Stdout, "[Test Server] ", os.O_CREATE|os.O_WRONLY|os.O_APPEND),
 	}
 
 	go func() {
