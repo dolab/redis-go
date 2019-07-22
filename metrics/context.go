@@ -8,6 +8,10 @@ import (
 )
 
 func (m *Metrics) Dialer(localAddr, remoteAddr string) {
+	if !m.Enabled() {
+		return
+	}
+
 	localN := len(localAddr)
 	if n := strings.IndexByte(localAddr, ':'); n > 0 {
 		localN = n
@@ -27,6 +31,10 @@ func (m *Metrics) Dialer(localAddr, remoteAddr string) {
 }
 
 func (m *Metrics) IncConnection(remoteAddr, localAddr string) {
+	if !m.Enabled() {
+		return
+	}
+
 	localN := len(localAddr)
 	if n := strings.IndexByte(localAddr, ':'); n > 0 {
 		localN = n
@@ -46,6 +54,10 @@ func (m *Metrics) IncConnection(remoteAddr, localAddr string) {
 }
 
 func (m *Metrics) DecConnection(remoteAddr, localAddr string) {
+	if !m.Enabled() {
+		return
+	}
+
 	localN := len(localAddr)
 	if n := strings.IndexByte(localAddr, ':'); n > 0 {
 		localN = n
@@ -65,6 +77,10 @@ func (m *Metrics) DecConnection(remoteAddr, localAddr string) {
 }
 
 func (m *Metrics) IncRequest(remoteAddr string) {
+	if !m.Enabled() {
+		return
+	}
+
 	labels := prometheus.Labels{
 		"remote_addr": remoteAddr,
 	}
@@ -77,6 +93,10 @@ func (m *Metrics) IncRequest(remoteAddr string) {
 }
 
 func (m *Metrics) DecRequest(remoteAddr string) {
+	if !m.Enabled() {
+		return
+	}
+
 	labels := prometheus.Labels{
 		"remote_addr": remoteAddr,
 	}
@@ -86,6 +106,10 @@ func (m *Metrics) DecRequest(remoteAddr string) {
 }
 
 func (m *Metrics) ObserveRequest(remoteAddr string, issuedAt time.Time) {
+	if !m.Enabled() {
+		return
+	}
+
 	labels := prometheus.Labels{
 		"remote_addr": remoteAddr,
 	}
@@ -94,6 +118,10 @@ func (m *Metrics) ObserveRequest(remoteAddr string, issuedAt time.Time) {
 }
 
 func (m *Metrics) IncCommands(remoteAddr string, cmds []string) {
+	if !m.Enabled() {
+		return
+	}
+
 	for _, cmd := range cmds {
 		labels := prometheus.Labels{
 			"remote_addr": remoteAddr,
@@ -109,6 +137,10 @@ func (m *Metrics) IncCommands(remoteAddr string, cmds []string) {
 }
 
 func (m *Metrics) DecCommands(remoteAddr string, cmds []string) {
+	if !m.Enabled() {
+		return
+	}
+
 	for _, cmd := range cmds {
 		labels := prometheus.Labels{
 			"remote_addr": remoteAddr,
@@ -120,7 +152,67 @@ func (m *Metrics) DecCommands(remoteAddr string, cmds []string) {
 	}
 }
 
+func (m *Metrics) IncBytesReceived(remoteAddr, localAddr string, size float64) {
+	if !m.Enabled() {
+		return
+	}
+
+	labels := prometheus.Labels{
+		"remote_addr": remoteAddr,
+		"local_addr":  localAddr,
+	}
+
+	// for bytes received from client
+	m.monitor.server.bytesReceived.With(labels).Add(size)
+}
+
+func (m *Metrics) IncBytesSend(remoteAddr, localAddr string, size float64) {
+	if !m.Enabled() {
+		return
+	}
+
+	labels := prometheus.Labels{
+		"remote_addr": remoteAddr,
+		"local_addr":  localAddr,
+	}
+
+	// for bytes send to client
+	m.monitor.server.bytesSend.With(labels).Add(size)
+}
+
+func (m *Metrics) IncBytesWrite(localAddr, remoteAddr string, size float64) {
+	if !m.Enabled() {
+		return
+	}
+
+	labels := prometheus.Labels{
+		"remote_addr": remoteAddr,
+		"local_addr":  localAddr,
+	}
+
+	// for bytes write to redis
+	m.monitor.server.bytesWrite.With(labels).Add(size)
+}
+
+func (m *Metrics) IncBytesRead(localAddr, remoteAddr string, size float64) {
+	if !m.Enabled() {
+		return
+	}
+
+	labels := prometheus.Labels{
+		"remote_addr": remoteAddr,
+		"local_addr":  localAddr,
+	}
+
+	// for bytes read from redis
+	m.monitor.server.bytesRead.With(labels).Add(size)
+}
+
 func (m *Metrics) IncErrors(remoteAddr string, cmds []string) {
+	if !m.Enabled() {
+		return
+	}
+
 	labels := prometheus.Labels{
 		"remote_addr": remoteAddr,
 		"cmds":        strings.Join(cmds, ","),

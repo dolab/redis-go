@@ -14,6 +14,8 @@ type Matrix struct {
 	commandsTotal   *prometheus.CounterVec
 	bytesReceived   *prometheus.CounterVec
 	bytesSend       *prometheus.CounterVec
+	bytesWrite      *prometheus.CounterVec
+	bytesRead       *prometheus.CounterVec
 	errors          *prometheus.CounterVec
 }
 
@@ -74,7 +76,7 @@ func NewServerMatrix(labels prometheus.Labels) *Matrix {
 			Namespace:   "redis",
 			Subsystem:   "server",
 			Name:        "commands_total",
-			Help:        "Number of commands processed by server.",
+			Help:        "Total number of commands processed by server.",
 			ConstLabels: labels,
 		},
 		[]string{"remote_addr", "cmd"},
@@ -84,17 +86,37 @@ func NewServerMatrix(labels prometheus.Labels) *Matrix {
 			Namespace:   "redis",
 			Subsystem:   "server",
 			Name:        "bytes_recv_total",
-			Help:        "Total bytes of messages received by server.",
+			Help:        "Total bytes of messages received from client by server.",
 			ConstLabels: labels,
 		},
-		[]string{"remote_addr"},
+		[]string{"remote_addr", "local_addr"},
 	)
 	serverSendBytes := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace:   "redis",
 			Subsystem:   "server",
 			Name:        "bytes_send_total",
-			Help:        "Total bytes of messages send by server.",
+			Help:        "Total bytes of messages send to client by server.",
+			ConstLabels: labels,
+		},
+		[]string{"remote_addr", "local_addr"},
+	)
+	serverWriteBytes := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace:   "redis",
+			Subsystem:   "server",
+			Name:        "bytes_write_total",
+			Help:        "Total bytes of messages write to redis by server.",
+			ConstLabels: labels,
+		},
+		[]string{"remote_addr"},
+	)
+	serverReadBytes := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace:   "redis",
+			Subsystem:   "server",
+			Name:        "bytes_read_total",
+			Help:        "Total bytes of messages read from redis by server.",
 			ConstLabels: labels,
 		},
 		[]string{"remote_addr"},
@@ -119,6 +141,8 @@ func NewServerMatrix(labels prometheus.Labels) *Matrix {
 		commandsTotal:   serverCommandsTotal,
 		bytesReceived:   serverRecvBytes,
 		bytesSend:       serverSendBytes,
+		bytesWrite:      serverWriteBytes,
+		bytesRead:       serverReadBytes,
 		errors:          serverErrors,
 	}
 }

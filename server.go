@@ -12,6 +12,8 @@ import (
 
 	"github.com/dolab/objconv"
 	"github.com/dolab/objconv/resp"
+
+	"github.com/dolab/redis-go/metrics"
 )
 
 // A ResponseWriter interface is used by a Redis handler to construct an Redis
@@ -93,6 +95,15 @@ type Server struct {
 	connections map[*Conn]struct{}
 	context     context.Context
 	shutdown    context.CancelFunc
+}
+
+func (s *Server) WithMetrics() *Server {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	gometrics = metrics.NewMetrics(nil, true)
+
+	return s
 }
 
 // ListenAndServe listens on the network address s.Addr and then calls Serve to
