@@ -14,7 +14,7 @@ import (
 func TestMetrics(t *testing.T) {
 	it := assert.New(t)
 
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil, true)
 	if it.NotNil(metrics) {
 		it.NotNil(metrics.counters)
 		it.NotNil(metrics.gauges)
@@ -25,7 +25,7 @@ func TestMetrics(t *testing.T) {
 func TestMetrics_Counter(t *testing.T) {
 	it := assert.New(t)
 
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil, true)
 
 	name := "testing_counter"
 	help := "custom testing counter"
@@ -56,7 +56,7 @@ func TestMetrics_Counter(t *testing.T) {
 func TestMetrics_Gauge(t *testing.T) {
 	it := assert.New(t)
 
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil, true)
 
 	name := "testing_gauge"
 	help := "custom testing gauge"
@@ -87,7 +87,7 @@ func TestMetrics_Gauge(t *testing.T) {
 func TestMetrics_Histogram(t *testing.T) {
 	it := assert.New(t)
 
-	metrics := NewMetrics(nil)
+	metrics := NewMetrics(nil, true)
 
 	name := "testing_histogram"
 	help := "custom testing histogram"

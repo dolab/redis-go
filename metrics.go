@@ -15,16 +15,16 @@ var (
 	gometricsOnce sync.Once
 )
 
-func init() {
+// ServeMetrics exports prometheus metrics of internal server.
+func ServeMetrics(w http.ResponseWriter, r *http.Request) {
 	gometricsOnce.Do(func() {
-		gometrics = metrics.NewMetrics(nil)
+		if gometrics == nil {
+			return
+		}
 
 		prometheus.MustRegister(gometrics)
 	})
-}
 
-// ServeMetrics exports prometheus metrics of internal server.
-func ServeMetrics(w http.ResponseWriter, r *http.Request) {
 	promhttp.Handler().ServeHTTP(w, r)
 }
 

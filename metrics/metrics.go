@@ -15,16 +15,23 @@ type Metrics struct {
 	counters   map[string]*prometheus.CounterVec
 	gauges     map[string]*prometheus.GaugeVec
 	histograms map[string]*prometheus.HistogramVec
+
+	enable bool
 }
 
 // NewMetrics creates a new metrics of grpc interceptor for shared usage.
-func NewMetrics(labels prometheus.Labels) *Metrics {
+func NewMetrics(labels prometheus.Labels, enable bool) *Metrics {
 	return &Metrics{
 		monitor:    NewMonitor(labels),
 		counters:   make(map[string]*prometheus.CounterVec),
 		gauges:     make(map[string]*prometheus.GaugeVec),
 		histograms: make(map[string]*prometheus.HistogramVec),
+		enable:     enable,
 	}
+}
+
+func (m *Metrics) Enabled() bool {
+	return m != nil && m.enable
 }
 
 // Describe implements prometheus Collector interface.
