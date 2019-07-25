@@ -46,6 +46,11 @@ func (cmd *Command) newCommand() Command {
 
 // pipeCommand returns a new Command for for pipeline, or an error of ErrNotPipeline indicates no pipeline.
 func (cmd *Command) pipeCommand() (pipe Command, err error) {
+	if cmd.Args == nil {
+		err = ErrNotPipeline
+		return
+	}
+
 	// shortcut for ping cmd
 	if cmd.Cmd == "PING" {
 		err = ErrNotPipeline
@@ -60,7 +65,7 @@ func (cmd *Command) pipeCommand() (pipe Command, err error) {
 	switch cmd.Args.(type) {
 	case *cmdArgsReader:
 		cmdArgs := cmd.Args.(*cmdArgsReader)
-		if !cmdArgs.nextCommand(&pipe) {
+		if !cmdArgs.parseCommand(&pipe) {
 			err = ErrNotPipeline
 		}
 
@@ -82,7 +87,7 @@ func (cmd *Command) pipeCommand() (pipe Command, err error) {
 		if cmdArgs == nil {
 			err = ErrNotPipeline
 		} else {
-			if !cmdArgs.nextCommand(&pipe) {
+			if !cmdArgs.parseCommand(&pipe) {
 				err = ErrNotPipeline
 			}
 		}
@@ -203,10 +208,8 @@ func (r *CommandReader) Read(cmd *Command) bool {
 	return true
 }
 
-func (r *CommandReader) resetReader(cmd *Command) bool {
+func (r *CommandReader) resetReader() {
 	r.done = false
-
-	return r.Read(cmd)
 }
 
 func (r *CommandReader) resetDecoder() {
@@ -292,8 +295,10 @@ func (args *cmdArgsReader) Next(val interface{}) bool {
 	return true
 }
 
-func (args *cmdArgsReader) nextCommand(cmd *Command) bool {
-	return args.r.resetReader(cmd)
+func (args *cmdArgsReader) parseCommand(cmd *Command) bool {
+	args.r.resetReader()
+
+	return args.r.Read(cmd)
 }
 
 func (args *cmdArgsReader) parse(v reflect.Value) error {

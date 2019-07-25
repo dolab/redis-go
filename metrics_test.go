@@ -8,13 +8,14 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dolab/objconv/resp"
-	"github.com/dolab/redis-go"
-	"github.com/dolab/redis-go/metrics"
-	"github.com/dolab/redis-go/redistest"
 	"github.com/golib/assert"
 	"github.com/google/uuid"
+
+	"github.com/dolab/redis-go"
+	"github.com/dolab/redis-go/redistest"
 )
 
 func TestServerMetrics(t *testing.T) {
@@ -23,23 +24,15 @@ func TestServerMetrics(t *testing.T) {
 	respErr := resp.NewError("ERR something went wrong")
 
 	var counter int64
-	srv, addr := redistest.FakeServer(redis.HandlerFunc(func(res redis.ResponseWriter, req *redis.Request) {
+	srv, addr := redistest.FakeMetricsServer(redis.HandlerFunc(func(res redis.ResponseWriter, req *redis.Request) {
 		if atomic.AddInt64(&counter, 1)%2 == 0 {
 			res.Write(respErr)
 		} else {
 			res.Write("OK")
 		}
 
-	}))
+	}), time.Second)
 	defer srv.Close()
-
-	opts := metrics.Options{
-		Subsystem:           "proxy",
-		Labels:              nil,
-		EnableServerMetrics: true,
-	}
-
-	srv.WithMetrics(opts)
 
 	tr := &redis.Transport{MaxIdleConns: 1}
 	defer tr.CloseIdleConnections()

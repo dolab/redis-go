@@ -408,6 +408,9 @@ func (s *Server) servePipeline(c *Conn, addr string, cmds []Command, config serv
 	}
 
 	if len(pipeCmds) > 0 {
+		// TODO: This is for temporary solution and it should refactor to pipeline way!
+		c.setTimeout(config.readTimeout)
+
 		err = s.serveCommands(c, addr, pipeCmds, config)
 	}
 

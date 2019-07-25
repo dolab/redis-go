@@ -12,11 +12,12 @@ import (
 	"time"
 
 	"github.com/dolab/objconv/resp"
-	"github.com/dolab/redis-go"
-	"github.com/dolab/redis-go/redistest"
 	goredis "github.com/go-redis/redis"
 	fuzz "github.com/google/gofuzz"
 	"github.com/google/uuid"
+
+	"github.com/dolab/redis-go"
+	"github.com/dolab/redis-go/redistest"
 )
 
 func TestServer(t *testing.T) {
