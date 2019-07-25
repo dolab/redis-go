@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -97,11 +96,11 @@ type Server struct {
 	shutdown    context.CancelFunc
 }
 
-func (s *Server) WithMetrics() *Server {
+func (s *Server) WithMetrics(opts metrics.Options) *Server {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	gometrics = metrics.NewMetrics(nil, true)
+	gometrics = metrics.NewMetrics(opts)
 
 	return s
 }
@@ -339,18 +338,17 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serverConfig) (err error) {
 	var (
 		names      = make([]string, len(cmds))
-		remoteAddr = addr
+		remoteAddr = metrics.TrimPort(addr)
+		localAddr  = metrics.TrimPort(c.LocalAddr().String())
 		issuedAt   = time.Now()
 	)
-	if n := strings.IndexByte(addr, ':'); n > 0 {
-		remoteAddr = addr[:n]
-	}
 	for i, cmd := range cmds {
 		names[i] = cmd.Cmd
 	}
 
-	gometrics.IncRequest(remoteAddr)
-	gometrics.IncCommands(remoteAddr, names)
+	// inc request and commands of processing
+	gometrics.IncRequest(remoteAddr, localAddr)
+	gometrics.IncCommands(remoteAddr, localAddr, names)
 
 	ctx, cancel := context.WithTimeout(context.Background(), config.readTimeout)
 
@@ -379,11 +377,14 @@ func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serv
 	// cancel context
 	cancel()
 
-	gometrics.ObserveRequest(remoteAddr, issuedAt)
-	gometrics.DecRequest(remoteAddr)
-	gometrics.DecCommands(remoteAddr, names)
+	// for request duration
+	gometrics.ObserveRequest(remoteAddr, localAddr, issuedAt)
+
+	// dec request and commands of processing
+	gometrics.DecRequest(remoteAddr, localAddr)
+	gometrics.DecCommands(remoteAddr, localAddr, names)
 	if err != nil {
-		gometrics.IncErrors(remoteAddr, names)
+		gometrics.IncErrors(remoteAddr, localAddr, names)
 	}
 	return
 }
