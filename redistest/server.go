@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/dolab/redis-go"
+	"github.com/dolab/redis-go/metrics"
+
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -119,22 +121,67 @@ func FakeServer(handler redis.Handler) (srv *redis.Server, url string) {
 	return FakeTimeoutServer(handler, 1000*time.Millisecond)
 }
 
-func FakeTimeoutServer(handler redis.Handler, timeout time.Duration) (serv *redis.Server, addr string) {
+func FakeTimeoutServer(handler redis.Handler, timeout time.Duration) (srv *redis.Server, addr string) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		panic(err)
 	}
 
-	serv = &redis.Server{
+	srv = &redis.Server{
 		Handler:      handler,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 5 * time.Second,
 		IdleTimeout:  timeout,
-		ErrorLog:     log.New(os.Stdout, "[Test Server] ", os.O_CREATE|os.O_WRONLY|os.O_APPEND),
+		ErrorLog:     log.New(os.Stdout, "[Server Timeout] ", os.O_CREATE|os.O_WRONLY|os.O_APPEND),
 	}
 
 	go func() {
-		err := serv.Serve(l)
+		err := srv.Serve(l)
+		if err != redis.ErrServerClosed {
+			log.Fatalf("[Server] %v", err)
+		}
+	}()
+
+	addr = l.Addr().String()
+
+	stopCh := make(chan struct{})
+	wait.Until(func() {
+		client := redis.Client{
+			Addr:    addr,
+			Timeout: 10 * time.Millisecond,
+		}
+
+		err := client.Exec(context.Background(), "PING")
+		if err == nil {
+			close(stopCh)
+		}
+	}, 10*time.Millisecond, stopCh)
+	<-stopCh
+
+	return
+}
+
+func FakeMetricsServer(handler redis.Handler, timeout time.Duration) (srv *redis.Server, addr string) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+
+	srv = &redis.Server{
+		Handler:      handler,
+		ReadTimeout:  3 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		IdleTimeout:  timeout,
+		ErrorLog:     log.New(os.Stdout, "[Server Metrics] ", os.O_CREATE|os.O_WRONLY|os.O_APPEND),
+	}
+	srv.WithMetrics(metrics.Options{
+		Subsystem:           "proxy",
+		Labels:              nil,
+		EnableServerMetrics: true,
+	})
+
+	go func() {
+		err := srv.Serve(l)
 		if err != redis.ErrServerClosed {
 			log.Fatalf("[Server] %v", err)
 		}
