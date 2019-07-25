@@ -11,6 +11,7 @@ import (
 
 	"github.com/dolab/objconv/resp"
 	"github.com/dolab/redis-go"
+	"github.com/dolab/redis-go/metrics"
 	"github.com/dolab/redis-go/redistest"
 	"github.com/golib/assert"
 	"github.com/google/uuid"
@@ -32,7 +33,13 @@ func TestServerMetrics(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	srv.WithMetrics()
+	opts := metrics.Options{
+		Subsystem:           "proxy",
+		Labels:              nil,
+		EnableServerMetrics: true,
+	}
+
+	srv.WithMetrics(opts)
 
 	tr := &redis.Transport{MaxIdleConns: 1}
 	defer tr.CloseIdleConnections()
@@ -64,14 +71,26 @@ func TestServerMetrics(t *testing.T) {
 	redis.ServeMetrics(w, r)
 
 	output := w.Body.String()
-	it.Contains(output, `redis_server_requests_total{remote_addr="127.0.0.1"}`)
-	it.Contains(output, `redis_server_requests{remote_addr="127.0.0.1"}`)
-	it.NotContains(output, `redis_server_commands_total{cmd="PING",remote_addr="127.0.0.1"}`)
-	it.Contains(output, `redis_server_commands_total{cmd="SET",remote_addr="127.0.0.1"}`)
-	it.Contains(output, `redis_server_commands_total{cmd="GET",remote_addr="127.0.0.1"}`)
-	it.Contains(output, `redis_server_commands_total{cmd="DEL",remote_addr="127.0.0.1"}`)
-	it.NotContains(output, `redis_server_commands{cmd="PING",remote_addr="127.0.0.1"}`)
-	it.Contains(output, `redis_server_commands{cmd="SET",remote_addr="127.0.0.1"}`)
-	it.Contains(output, `redis_server_commands{cmd="GET",remote_addr="127.0.0.1"}`)
-	it.Contains(output, `redis_server_commands{cmd="DEL",remote_addr="127.0.0.1"}`)
+
+	// for connection
+	it.Contains(output, `redis_proxy_connections{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_proxy_reconnects_total{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+
+	// for request
+	it.Contains(output, `redis_proxy_requests_total{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_proxy_requests{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+
+	// for commands
+	it.NotContains(output, `redis_proxy_commands_total{cmd="PING",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_proxy_commands_total{cmd="SET",local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_proxy_commands_total{cmd="GET",local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_proxy_commands_total{cmd="DEL",local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+	it.NotContains(output, `redis_proxy_commands{cmd="PING",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_proxy_commands{cmd="SET",local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_proxy_commands{cmd="GET",local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_proxy_commands{cmd="DEL",local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+
+	// for duration
+	it.Contains(output, `redis_proxy_redis_duration_seconds_sum{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+	it.Contains(output, `redis_proxy_redis_duration_seconds_count{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
 }

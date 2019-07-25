@@ -188,14 +188,19 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 		conn = NewClientConn(c)
 	}
 
-	resch := make(chan *Response, 1)
-	errch := make(chan error, 1)
+	var (
+		resch    = make(chan *Response, 1)
+		errch    = make(chan error, 1)
+		issuedAt = time.Now()
+	)
 
 	go t.writeRequest(conn, req, errch)
 	go t.readResponse(conn, req, resch)
 
-	var res *Response
-	var err error
+	var (
+		res *Response
+		err error
+	)
 
 	select {
 	case res = <-resch:
@@ -204,12 +209,18 @@ func (t *Transport) RoundTrip(req *Request) (*Response, error) {
 		err = ctx.Err()
 	}
 
+	var (
+		laddr = conn.LocalAddr()
+		raddr = conn.RemoteAddr()
+	)
 	if err != nil {
-		laddr := conn.LocalAddr()
-		raddr := conn.RemoteAddr()
 		conn.Close()
 
 		err = &net.OpError{Op: "request", Net: "redis", Source: laddr, Addr: raddr, Err: err}
+
+		gometrics.IncErrors(raddr.String(), laddr.String(), []string{"dialer"})
+	} else {
+		gometrics.ObserveRedis(raddr.String(), laddr.String(), issuedAt)
 	}
 
 	return res, err

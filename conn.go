@@ -15,7 +15,7 @@ import (
 var (
 	// ErrDiscard is the error returned to indicate that transactions are
 	// discarded.
-	ErrDiscard = resp.NewError("EXECABORT Transcation discarded.")
+	ErrDiscard = resp.NewError("EXECABORT Transaction discarded.")
 )
 
 // Conn is a low-level API to represent client connections to redis.
@@ -47,6 +47,7 @@ func DialContext(ctx context.Context, network string, address string) (*Conn, er
 	if err != nil {
 		return nil, err
 	}
+
 	return NewClientConn(c), nil
 }
 

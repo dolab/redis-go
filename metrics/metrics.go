@@ -9,29 +9,28 @@ import (
 // Metrics implements prometheus Collector interface for server and handler.
 type Metrics struct {
 	monitor *Monitor
+	options Options
 
 	// for custom metrics with handler
 	mutex      sync.RWMutex
 	counters   map[string]*prometheus.CounterVec
 	gauges     map[string]*prometheus.GaugeVec
 	histograms map[string]*prometheus.HistogramVec
-
-	enable bool
 }
 
 // NewMetrics creates a new metrics of grpc interceptor for shared usage.
-func NewMetrics(labels prometheus.Labels, enable bool) *Metrics {
+func NewMetrics(opts Options) *Metrics {
 	return &Metrics{
-		monitor:    NewMonitor(labels),
+		monitor:    NewMonitor(opts.Subsystem, opts.Labels),
+		options:    opts,
 		counters:   make(map[string]*prometheus.CounterVec),
 		gauges:     make(map[string]*prometheus.GaugeVec),
 		histograms: make(map[string]*prometheus.HistogramVec),
-		enable:     enable,
 	}
 }
 
 func (m *Metrics) Enabled() bool {
-	return m != nil && m.enable
+	return m != nil && m.options.Enabled()
 }
 
 // Describe implements prometheus Collector interface.

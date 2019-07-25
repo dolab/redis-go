@@ -11,11 +11,11 @@ type Monitor struct {
 }
 
 // NewMonitor creates Monitor for starting
-func NewMonitor(labels prometheus.Labels) *Monitor {
+func NewMonitor(subsystem string, labels prometheus.Labels) *Monitor {
 	dialer := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace:   "redis",
-			Subsystem:   "client",
+			Subsystem:   subsystem,
 			Name:        "reconnects_total",
 			Help:        "Total number of reconnects made by server to redis back server.",
 			ConstLabels: labels,
@@ -25,7 +25,7 @@ func NewMonitor(labels prometheus.Labels) *Monitor {
 
 	return &Monitor{
 		dialer: dialer,
-		server: NewServerMatrix(labels),
+		server: NewServerMatrix(subsystem, labels),
 	}
 }
 

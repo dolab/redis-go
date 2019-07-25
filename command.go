@@ -108,22 +108,24 @@ func (cmd *Command) getKeys(keys []string) []string {
 }
 
 func (cmd *Command) loadByteArgs() {
-	if cmd.Args != nil {
-		var (
-			list [][]byte
-			arg  []byte
-		)
+	if cmd.Args == nil {
+		return
+	}
 
-		for cmd.Args.Next(&arg) {
-			list = append(list, arg)
-			arg = nil
-		}
+	var (
+		list [][]byte
+		arg  []byte
+	)
 
-		if err := cmd.Args.Close(); err != nil {
-			cmd.Args = newArgsError(err)
-		} else {
-			cmd.Args = &byteArgs{args: list}
-		}
+	for cmd.Args.Next(&arg) {
+		list = append(list, arg)
+		arg = nil
+	}
+
+	if err := cmd.Args.Close(); err != nil {
+		cmd.Args = newArgsError(err)
+	} else {
+		cmd.Args = &byteArgs{args: list}
 	}
 }
 
