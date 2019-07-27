@@ -135,8 +135,12 @@ func (cmd *Command) loadByteArgs() {
 }
 
 func (cmd *Command) appendArg(arg []byte) {
-	cmd.args[cmd.argn] = make([]byte, len(arg))
-	copy(cmd.args[cmd.argn], arg)
+	if len(cmd.args) >= cmd.argn {
+		cmd.args = append(cmd.args, arg)
+	} else {
+		cmd.args[cmd.argn] = make([]byte, len(arg))
+		copy(cmd.args[cmd.argn], arg)
+	}
 
 	cmd.argn++
 }
@@ -149,6 +153,7 @@ type CommandReader struct {
 	dec   objconv.StreamDecoder
 	multi bool
 	done  bool
+	retry bool
 	err   error
 }
 
@@ -203,7 +208,6 @@ func (r *CommandReader) Read(cmd *Command) bool {
 		r.done = !r.multi
 	}
 
-	cmd.args = make([][]byte, r.dec.Len())
 	cmd.Args = newCmdArgsReader(r, cmd)
 	return true
 }
@@ -217,6 +221,10 @@ func (r *CommandReader) resetDecoder() {
 }
 
 func newCmdArgsReader(r *CommandReader, cmd *Command) *cmdArgsReader {
+	if r.retry {
+		cmd.args = make([][]byte, 0, r.dec.Len())
+	}
+
 	args := &cmdArgsReader{r: r, cmd: cmd}
 	args.b = args.a[:0]
 	return args
@@ -289,7 +297,9 @@ func (args *cmdArgsReader) Next(val interface{}) bool {
 			return false
 		}
 
-		args.cmd.appendArg(args.b[:])
+		if args.r.retry {
+			args.cmd.appendArg(args.b[:])
+		}
 	}
 
 	return true
