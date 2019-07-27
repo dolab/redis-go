@@ -70,6 +70,10 @@ type Server struct {
 	// Handler invoked to handle Redis requests, must not be nil.
 	Handler Handler
 
+	// features of command retry and pipeline
+	EnableRetry    bool
+	EnablePipeline bool
+
 	// ReadTimeout is the maximum duration for reading the entire request,
 	// including the reading the argument list.
 	ReadTimeout time.Duration
@@ -205,6 +209,7 @@ func (s *Server) Serve(l net.Listener) error {
 		idleTimeout:  s.IdleTimeout,
 		readTimeout:  s.ReadTimeout,
 		writeTimeout: s.WriteTimeout,
+		retryable:    s.EnableRetry,
 	}
 
 	if config.idleTimeout == 0 {
@@ -273,7 +278,7 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 		}
 
 		c.setTimeout(config.readTimeout)
-		cmdReader := c.ReadCommands()
+		cmdReader := c.ReadCommands(config.retryable)
 
 		cmds := make([]Command, 0, 4)
 		cmds = append(cmds, Command{})
@@ -367,7 +372,7 @@ func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serv
 
 	// is this a pipeline?
 	reqErr := req.Close()
-	if err == nil && reqErr == nil {
+	if s.EnablePipeline && err == nil && reqErr == nil {
 		pipeErr := s.servePipeline(c, addr, cmds, config)
 		if pipeErr != ErrNotPipeline {
 			err = pipeErr
@@ -575,6 +580,7 @@ type serverConfig struct {
 	idleTimeout  time.Duration
 	readTimeout  time.Duration
 	writeTimeout time.Duration
+	retryable    bool
 }
 
 func backoff(attempt int, minDelay time.Duration, maxDelay time.Duration) time.Duration {

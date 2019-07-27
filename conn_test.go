@@ -827,7 +827,7 @@ func writeCommands(t *testing.T, conn *redis.Conn, cmds ...redis.Command) {
 }
 
 func readCommands(t *testing.T, conn *redis.Conn, expectErr error, cmds ...redis.Command) {
-	r := conn.ReadCommands()
+	r := conn.ReadCommands(false)
 	c := redis.Command{}
 	i := 0
 

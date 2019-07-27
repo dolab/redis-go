@@ -128,11 +128,13 @@ func FakeTimeoutServer(handler redis.Handler, timeout time.Duration) (srv *redis
 	}
 
 	srv = &redis.Server{
-		Handler:      handler,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 5 * time.Second,
-		IdleTimeout:  timeout,
-		ErrorLog:     log.New(os.Stdout, "[Server Timeout] ", os.O_CREATE|os.O_WRONLY|os.O_APPEND),
+		Handler:        handler,
+		ReadTimeout:    3 * time.Second,
+		WriteTimeout:   5 * time.Second,
+		IdleTimeout:    timeout,
+		EnableRetry:    true,
+		EnablePipeline: true,
+		ErrorLog:       log.New(os.Stdout, "[Server Timeout] ", os.O_CREATE|os.O_WRONLY|os.O_APPEND),
 	}
 
 	go func() {

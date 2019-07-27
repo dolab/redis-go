@@ -192,14 +192,15 @@ func (c *Conn) Flush() error {
 // The new CommandReader holds the connection's read lock, which is released
 // only when its Close method is called, so a program must make sure to call
 // that method or the connection will be left in an unusable state.
-func (c *Conn) ReadCommands() *CommandReader {
+func (c *Conn) ReadCommands(retry bool) *CommandReader {
 	c.rmutex.Lock()
 
 	c.resetDecoder()
 
 	return &CommandReader{
-		conn: c,
-		dec:  c.decoder,
+		conn:  c,
+		dec:   c.decoder,
+		retry: retry,
 	}
 }
 
