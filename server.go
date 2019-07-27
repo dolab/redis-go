@@ -70,7 +70,9 @@ type Server struct {
 	// Handler invoked to handle Redis requests, must not be nil.
 	Handler Handler
 
-	EnableRetry bool
+	// features of command retry and pipeline
+	EnableRetry    bool
+	EnablePipeline bool
 
 	// ReadTimeout is the maximum duration for reading the entire request,
 	// including the reading the argument list.
@@ -370,7 +372,7 @@ func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serv
 
 	// is this a pipeline?
 	reqErr := req.Close()
-	if err == nil && reqErr == nil {
+	if s.EnablePipeline && err == nil && reqErr == nil {
 		pipeErr := s.servePipeline(c, addr, cmds, config)
 		if pipeErr != ErrNotPipeline {
 			err = pipeErr
