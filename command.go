@@ -44,58 +44,6 @@ func (cmd *Command) newCommand() Command {
 	}
 }
 
-// pipeCommand returns a new Command for for pipeline, or an error of ErrNotPipeline indicates no pipeline.
-func (cmd *Command) pipeCommand() (pipe Command, err error) {
-	if cmd.Args == nil {
-		err = ErrNotPipeline
-		return
-	}
-
-	// shortcut for ping cmd
-	if cmd.Cmd == "PING" {
-		err = ErrNotPipeline
-		return
-	}
-
-	err = cmd.Args.Close()
-	if err != nil {
-		return
-	}
-
-	switch cmd.Args.(type) {
-	case *cmdArgsReader:
-		cmdArgs := cmd.Args.(*cmdArgsReader)
-		if !cmdArgs.parseCommand(&pipe) {
-			err = ErrNotPipeline
-		}
-
-	case *multiArgs:
-		// TODO: How to handler multi args correct?
-		listArgs := cmd.Args.(*multiArgs)
-
-		var (
-			cmdArgs *cmdArgsReader
-			ok      bool
-		)
-		for _, args := range listArgs.args {
-			cmdArgs, ok = args.(*cmdArgsReader)
-			if ok {
-				break
-			}
-		}
-
-		if cmdArgs == nil {
-			err = ErrNotPipeline
-		} else {
-			if !cmdArgs.parseCommand(&pipe) {
-				err = ErrNotPipeline
-			}
-		}
-	}
-
-	return
-}
-
 func (cmd *Command) getKeys(keys []string) []string {
 	lastIndex := len(keys)
 	keys = append(keys, "")
@@ -212,6 +160,18 @@ func (r *CommandReader) Read(cmd *Command) bool {
 	return true
 }
 
+// Pipe reads the next command from the command reader, it spec for pipeline feature of
+// redis RESP.
+func (r *CommandReader) Pipe(cmd *Command) bool {
+	if r.multi || !r.done {
+		return false
+	}
+
+	r.resetReader()
+
+	return r.Read(cmd)
+}
+
 func (r *CommandReader) resetReader() {
 	r.done = false
 }
@@ -303,12 +263,6 @@ func (args *cmdArgsReader) Next(val interface{}) bool {
 	}
 
 	return true
-}
-
-func (args *cmdArgsReader) parseCommand(cmd *Command) bool {
-	args.r.resetReader()
-
-	return args.r.Read(cmd)
 }
 
 func (args *cmdArgsReader) parse(v reflect.Value) error {
