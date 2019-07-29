@@ -326,6 +326,23 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 			}
 
 			cmds = cmds[1:lastIndex]
+		} else if s.EnablePipeline {
+			// Pipeline have to be loaded in memory because the server has to
+			// interleave responses between each command it receives.
+			for {
+				lastIndex := len(cmds)
+				if lastIndex > 0 {
+					cmds[lastIndex-1].loadByteArgs()
+				}
+
+				cmds = append(cmds, Command{})
+				cmd := &cmds[lastIndex]
+
+				if !cmdReader.Pipe(cmd) {
+					cmds = cmds[:lastIndex]
+					break
+				}
+			}
 		}
 
 		if err := s.serveCommands(c, remoteAddr, cmds, config); err != nil {
@@ -370,14 +387,8 @@ func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serv
 
 	err = s.serveRequest(res, req)
 
-	// is this a pipeline?
-	reqErr := req.Close()
-	if s.EnablePipeline && err == nil && reqErr == nil {
-		pipeErr := s.servePipeline(c, addr, cmds, config)
-		if pipeErr != ErrNotPipeline {
-			err = pipeErr
-		}
-	}
+	// close request
+	req.Close()
 
 	// cancel context
 	cancel()
@@ -391,34 +402,6 @@ func (s *Server) serveCommands(c *Conn, addr string, cmds []Command, config serv
 	if err != nil {
 		gometrics.IncErrors(remoteAddr, localAddr, names)
 	}
-	return
-}
-
-func (s *Server) servePipeline(c *Conn, addr string, cmds []Command, config serverConfig) (err error) {
-	var (
-		pipeCmds []Command
-	)
-	for _, cmd := range cmds {
-		pipeCmd, pipeErr := cmd.pipeCommand()
-		if pipeErr != nil {
-			err = pipeErr
-			break
-		}
-
-		pipeCmds = append(pipeCmds, pipeCmd)
-	}
-
-	if err != nil {
-		return
-	}
-
-	if len(pipeCmds) > 0 {
-		// TODO: This is for temporary solution and it should refactor to pipeline way!
-		c.setTimeout(config.readTimeout)
-
-		err = s.serveCommands(c, addr, pipeCmds, config)
-	}
-
 	return
 }
 

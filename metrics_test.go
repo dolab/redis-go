@@ -67,7 +67,7 @@ func TestServerMetrics(t *testing.T) {
 
 	// for connection
 	it.Contains(output, `redis_proxy_connections{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
-	it.Contains(output, `redis_proxy_reconnects_total{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
+	// it.Contains(output, `redis_proxy_reconnects_total{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
 
 	// for request
 	it.Contains(output, `redis_proxy_requests_total{local_addr="127.0.0.1",remote_addr="127.0.0.1"}`)
