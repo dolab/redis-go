@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -92,6 +93,7 @@ type Server struct {
 	// via the log package's standard logger.
 	ErrorLog Logger
 
+	ConnState   func(net.Conn, http.ConnState)
 	mutex       sync.Mutex
 	serveOnce   sync.Once
 	listeners   map[net.Listener]struct{}
@@ -247,17 +249,19 @@ func (s *Server) Serve(l net.Listener) error {
 		}
 
 		attempt = 0
-		c := NewServerConn(conn)
-		s.trackConnection(c)
+		c := NewServerConn(conn, s)
+		c.setState(http.StateNew)
 		go s.serveConnection(s.context, c, config)
 	}
 }
 
 func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConfig) {
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	defer c.Close()
-	defer s.untrackConnection(c)
+	defer func() {
+		cancel()
+		c.Close()
+		c.setState(http.StateClosed)
+	}()
 
 	var (
 		remoteAddr = c.RemoteAddr().String()
@@ -276,6 +280,7 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 		if c.waitReadyRead(config.idleTimeout) != nil {
 			return
 		}
+		c.setState(http.StateActive)
 
 		c.setTimeout(config.readTimeout)
 		cmdReader := c.ReadCommands(config.retryable)
@@ -337,6 +342,7 @@ func (s *Server) serveConnection(ctx context.Context, c *Conn, config serverConf
 			s.log(err)
 			return
 		}
+		c.setState(http.StateIdle)
 	}
 }
 
@@ -701,6 +707,7 @@ func (res *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		Writer: &res.conn.wbuffer,
 	}
 	res.conn = nil
+	res.conn.setState(http.StateHijacked)
 	return nc, rw, nil
 }
 

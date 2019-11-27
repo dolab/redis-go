@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dolab/objconv"
@@ -22,6 +24,7 @@ var (
 type Conn struct {
 	conn net.Conn
 
+	serv    *Server
 	rmutex  sync.Mutex
 	rbuffer bufio.Reader
 	decoder objconv.StreamDecoder
@@ -31,6 +34,8 @@ type Conn struct {
 	wbuffer bufio.Writer
 	encoder objconv.StreamEncoder
 	emitter resp.ClientEmitter
+
+	curState struct{ atomic uint64 }
 }
 
 // Dial connects to the redis server at the given address, returning a new client
@@ -81,9 +86,10 @@ func NewClientConn(conn net.Conn) *Conn {
 
 // NewServerConn creates a new redis connection from an already open server
 // connections.
-func NewServerConn(conn net.Conn) *Conn {
+func NewServerConn(conn net.Conn, s *Server) *Conn {
 	c := &Conn{
 		conn:    conn,
+		serv:    s,
 		rbuffer: *bufio.NewReader(conn),
 		wbuffer: *bufio.NewWriter(conn),
 	}
@@ -92,6 +98,31 @@ func NewServerConn(conn net.Conn) *Conn {
 	c.decoder = objconv.StreamDecoder{Parser: &c.parser}
 	c.encoder = objconv.StreamEncoder{Emitter: &c.emitter.Emitter}
 	return c
+}
+
+func (c *Conn) setState(state http.ConnState) {
+	if state > 0xff || state < 0 {
+		panic("internal error")
+	}
+
+	srv := c.serv
+	switch state {
+	case http.StateNew:
+		srv.trackConnection(c)
+	case http.StateHijacked, http.StateClosed:
+		srv.untrackConnection(c)
+	}
+
+	packedState := uint64(time.Now().Unix()<<8) | uint64(state)
+	atomic.StoreUint64(&c.curState.atomic, packedState)
+	if hook := srv.ConnState; hook != nil {
+		hook(c, state)
+	}
+}
+
+func (c *Conn) getState() (state http.ConnState, unixSec int64) {
+	packedState := atomic.LoadUint64(&c.curState.atomic)
+	return http.ConnState(packedState & 0xff), int64(packedState >> 8)
 }
 
 // Close closes the kafka connection.
